@@ -5,7 +5,14 @@ import { Download, Loader2, RotateCcw, Search, SlidersHorizontal, Star } from "l
 import { useLogSearch, useTelemetrySources } from "@/hooks/use-siem";
 import { useSession } from "@/store/session";
 import { useScopedStorage } from "@/lib/local-store";
-import { DEFAULT_RANGE, resolvePreset, TIME_PRESETS, type TimeRangeSelection, type TimeRangePreset } from "@/lib/query/time-range";
+import { useNavParams } from "@/lib/use-nav";
+import {
+  DEFAULT_RANGE,
+  resolvePreset,
+  TIME_PRESETS,
+  type TimeRangeSelection,
+  type TimeRangePreset,
+} from "@/lib/query/time-range";
 import { QUERY_LIMITS } from "@/lib/query/fields";
 import { formatTimestamp } from "@/lib/time";
 import type { NormalizedEvent } from "@/schemas";
@@ -36,23 +43,51 @@ interface SavedSearch {
 }
 
 const EXAMPLE_QUERIES = [
-  'event_type:windows_security_4625 AND entity.user:svc-backup',
-  'source.family:firewall AND event_type ~ firewall_*deny*',
-  'attack_technique_refs:exists',
-  'normalization_status:quarantined',
-  'entity.ip ~ 203.0.113.* OR entity.ip ~ 198.51.100.*',
+  "event_type:windows_security_4625 AND entity.user:svc-backup",
+  "source.family:firewall AND event_type ~ firewall_*deny*",
+  "attack_technique_refs:exists",
+  "normalization_status:quarantined",
+  "entity.ip ~ 203.0.113.* OR entity.ip ~ 198.51.100.*",
 ];
 
 export default function LogExplorerPage() {
-  const tenantId = useSession((s) => s.tenantId);
+  return (
+    <React.Suspense fallback={<LoadingState label="Loading Log Explorer…" />}>
+      <LogExplorerInner />
+    </React.Suspense>
+  );
+}
 
-  const [text, setText] = React.useState("");
-  const [range, setRange] = React.useState<TimeRangeSelection>(DEFAULT_RANGE);
-  const [includeQuarantined, setIncludeQuarantined] = React.useState(false);
+/** Hydrate initial state from URL params (drill-in from a dashboard). Read once. */
+function initialFromParams(params: URLSearchParams) {
+  const q = params.get("q");
+  const rangeParam = params.get("range") as TimeRangePreset | null;
+  const from = params.get("from");
+  const to = params.get("to");
+  const incl = params.get("quarantined") === "1";
+
+  let range: TimeRangeSelection = DEFAULT_RANGE;
+  if (from && to) range = { preset: "custom", fromIso: from, toIso: to };
+  else if (rangeParam && rangeParam !== "custom") range = resolvePreset(rangeParam);
+
+  const submitted: LogSearchInput | null =
+    q !== null
+      ? { query: q, fromIso: range.fromIso, toIso: range.toIso, includeQuarantined: incl, limit: QUERY_LIMITS.defaultResultRows }
+      : null;
+  return { text: q ?? "", range, incl, submitted };
+}
+
+function LogExplorerInner() {
+  const tenantId = useSession((s) => s.tenantId);
+  const { params } = useNavParams();
+
+  const [text, setText] = React.useState(() => initialFromParams(params).text);
+  const [range, setRange] = React.useState<TimeRangeSelection>(() => initialFromParams(params).range);
+  const [includeQuarantined, setIncludeQuarantined] = React.useState(() => initialFromParams(params).incl);
   const [showBuilder, setShowBuilder] = React.useState(false);
   const [selected, setSelected] = React.useState<NormalizedEvent | null>(null);
 
-  const [submitted, setSubmitted] = React.useState<LogSearchInput | null>(null);
+  const [submitted, setSubmitted] = React.useState<LogSearchInput | null>(() => initialFromParams(params).submitted);
   const [history, setHistory] = useScopedStorage<string[]>(tenantId, "log-explorer.history", []);
   const [saved, setSaved] = useScopedStorage<SavedSearch[]>(tenantId, "log-explorer.saved", []);
 
@@ -65,19 +100,17 @@ export default function LogExplorerPage() {
 
   const search = useLogSearch(submitted);
 
-  function runSearch(overrideText?: string, overrideRange?: TimeRangeSelection) {
-    const q = overrideText ?? text;
-    const r = overrideRange ?? range;
-    setSelected(null);
-    setSubmitted({
-      query: q,
-      fromIso: r.fromIso,
-      toIso: r.toIso,
-      includeQuarantined,
-      limit: QUERY_LIMITS.defaultResultRows,
-    });
-    if (q.trim()) setHistory((h) => [q, ...h.filter((x) => x !== q)].slice(0, 12));
-  }
+  const runSearch = React.useCallback(
+    (overrideText?: string, overrideRange?: TimeRangeSelection, overrideQuarantined?: boolean) => {
+      const q = overrideText ?? text;
+      const r = overrideRange ?? range;
+      const incl = overrideQuarantined ?? includeQuarantined;
+      setSelected(null);
+      setSubmitted({ query: q, fromIso: r.fromIso, toIso: r.toIso, includeQuarantined: incl, limit: QUERY_LIMITS.defaultResultRows });
+      if (q.trim()) setHistory((h) => [q, ...h.filter((x) => x !== q)].slice(0, 12));
+    },
+    [text, range, includeQuarantined, setHistory],
+  );
 
   function insertCondition(cond: string) {
     setText((t) => (t.trim() ? `${t.trim()} AND ${cond}` : cond));
@@ -91,6 +124,12 @@ export default function LogExplorerPage() {
       setRange(next);
       if (submitted) runSearch(undefined, next);
     }
+  }
+
+  function zoomToBucket(startIso: string, endIso: string) {
+    const next: TimeRangeSelection = { preset: "custom", fromIso: startIso, toIso: endIso };
+    setRange(next);
+    runSearch(undefined, next);
   }
 
   function exportRows(format: "csv" | "json") {
@@ -133,7 +172,6 @@ export default function LogExplorerPage() {
         description="Structured, bounded search over a deterministic ~72h sample of normalized telemetry. The query language never compiles to SQL, shell, eval, or an unsafe regex — a malformed query is rejected with a specific reason."
       />
 
-      {/* query bar */}
       <Card>
         <CardContent className="space-y-3 pt-5">
           <div className="flex flex-col gap-2 lg:flex-row">
@@ -142,7 +180,7 @@ export default function LogExplorerPage() {
               <Input
                 aria-label="Search query"
                 className="h-10 pl-9 font-mono text-sm"
-                placeholder='e.g.  event_type:windows_security_4625 AND entity.user:svc-backup'
+                placeholder="e.g.  event_type:windows_security_4625 AND entity.user:svc-backup"
                 value={text}
                 maxLength={QUERY_LIMITS.maxQueryLength}
                 onChange={(e) => setText(e.target.value)}
@@ -152,12 +190,7 @@ export default function LogExplorerPage() {
               />
             </div>
             <div className="flex gap-2">
-              <Select
-                aria-label="Time range"
-                className="h-10 w-40"
-                value={range.preset}
-                onChange={(e) => setPreset(e.target.value as TimeRangePreset)}
-              >
+              <Select aria-label="Time range" className="h-10 w-40" value={range.preset} onChange={(e) => setPreset(e.target.value as TimeRangePreset)}>
                 {TIME_PRESETS.map((p) => (
                   <option key={p.value} value={p.value}>
                     {p.label}
@@ -175,21 +208,11 @@ export default function LogExplorerPage() {
             <div className="flex flex-wrap items-end gap-2">
               <label className="text-xs text-muted-foreground">
                 From
-                <Input
-                  type="text"
-                  className="mt-1 h-8 w-56 font-mono text-xs"
-                  value={range.fromIso}
-                  onChange={(e) => setRange((r) => ({ ...r, fromIso: e.target.value }))}
-                />
+                <Input type="text" className="mt-1 h-8 w-56 font-mono text-xs" value={range.fromIso} onChange={(e) => setRange((r) => ({ ...r, fromIso: e.target.value }))} />
               </label>
               <label className="text-xs text-muted-foreground">
                 To
-                <Input
-                  type="text"
-                  className="mt-1 h-8 w-56 font-mono text-xs"
-                  value={range.toIso}
-                  onChange={(e) => setRange((r) => ({ ...r, toIso: e.target.value }))}
-                />
+                <Input type="text" className="mt-1 h-8 w-56 font-mono text-xs" value={range.toIso} onChange={(e) => setRange((r) => ({ ...r, toIso: e.target.value }))} />
               </label>
               <span className="text-[11px] text-muted-foreground">Max span {QUERY_LIMITS.maxTimeRangeDays} days.</span>
             </div>
@@ -259,21 +282,11 @@ export default function LogExplorerPage() {
             </Menu>
 
             <div className="ml-auto flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!result || result.rows.length === 0}
-                onClick={() => exportRows("csv")}
-              >
+              <Button variant="ghost" size="sm" disabled={!result || result.rows.length === 0} onClick={() => exportRows("csv")}>
                 <Download className="size-3.5" />
                 CSV
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!result || result.rows.length === 0}
-                onClick={() => exportRows("json")}
-              >
+              <Button variant="ghost" size="sm" disabled={!result || result.rows.length === 0} onClick={() => exportRows("json")}>
                 <Download className="size-3.5" />
                 JSON
               </Button>
@@ -284,7 +297,6 @@ export default function LogExplorerPage() {
         </CardContent>
       </Card>
 
-      {/* pre-search hint */}
       {!submitted && (
         <Card className="mt-4">
           <CardHeader>
@@ -313,17 +325,14 @@ export default function LogExplorerPage() {
         </Card>
       )}
 
-      {/* degraded-source notice */}
       {submitted && degradedSources.length > 0 && (
         <div className="mt-4">
           <DegradedSourceState>
-            {degradedSources.map((s) => `${s.connector_label} (${s.health})`).join("; ")} — results may under-count these
-            families.
+            {degradedSources.map((s) => `${s.connector_label} (${s.health})`).join("; ")} — results may under-count these families.
           </DegradedSourceState>
         </div>
       )}
 
-      {/* error / results */}
       {submitted && parseErrorShown && (
         <div className="mt-4">
           <QueryErrorState error={search.error} onRetry={() => search.refetch()} />
@@ -337,9 +346,7 @@ export default function LogExplorerPage() {
 
             {result && (
               <>
-                {search.data?.partial && (
-                  <PartialResultsBanner shown={result.rows.length} total={result.totalMatched * 2} />
-                )}
+                {search.data?.partial && <PartialResultsBanner shown={result.rows.length} total={result.totalMatched * 2} />}
                 {search.isStale && !search.isFetching && (
                   <StaleDataBanner ageLabel={formatTimestamp(new Date(search.dataUpdatedAt).toISOString())} onRefresh={() => search.refetch()} />
                 )}
@@ -349,11 +356,7 @@ export default function LogExplorerPage() {
                     <div>
                       <CardTitle>
                         {result.totalMatched.toLocaleString()} event{result.totalMatched === 1 ? "" : "s"}
-                        {result.truncated && (
-                          <span className="ml-2 text-xs font-normal text-muted-foreground">
-                            showing first {result.limit}
-                          </span>
-                        )}
+                        {result.truncated && <span className="ml-2 text-xs font-normal text-muted-foreground">showing first {result.limit}</span>}
                       </CardTitle>
                       <p className="text-xs text-muted-foreground">
                         scanned {result.scannedCount.toLocaleString()} in range · {formatTimestamp(result.timeRange.fromIso)} →{" "}
@@ -363,31 +366,21 @@ export default function LogExplorerPage() {
                     {search.isFetching && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
                   </CardHeader>
                   <CardContent>
-                    <Histogram data={search.data!.histogram} />
+                    <Histogram data={search.data!.histogram} onSelectBucket={zoomToBucket} />
                   </CardContent>
                 </Card>
 
                 {result.rows.length === 0 ? (
                   <NoResultsState onReset={() => { setText(""); setSubmitted(null); }}>
-                    Nothing matched <code className="rounded bg-muted px-1 font-mono">{submitted.query || "(empty query)"}</code> in
-                    this range. Widen the time range or loosen a condition.
+                    Nothing matched <code className="rounded bg-muted px-1 font-mono">{submitted.query || "(empty query)"}</code> in this range.
+                    Widen the time range or loosen a condition.
                   </NoResultsState>
                 ) : (
-                  <ResultsTable
-                    rows={result.rows}
-                    familyOf={(id) => familyOf(id)}
-                    selectedId={selected?.event_id ?? null}
-                    onSelect={setSelected}
-                  />
+                  <ResultsTable rows={result.rows} familyOf={(id) => familyOf(id)} selectedId={selected?.event_id ?? null} onSelect={setSelected} />
                 )}
 
                 {selected && (
-                  <EventDetail
-                    event={selected}
-                    familyOf={(id) => familyOf(id)}
-                    onClose={() => setSelected(null)}
-                    onSelectRelated={setSelected}
-                  />
+                  <EventDetail event={selected} familyOf={(id) => familyOf(id)} onClose={() => setSelected(null)} onSelectRelated={setSelected} />
                 )}
               </>
             )}
@@ -396,7 +389,12 @@ export default function LogExplorerPage() {
           <div className="space-y-4">
             {search.data && <FieldStats stats={search.data.fieldStats} onAddCondition={(f, v) => insertCondition(`${f}:${/\s/.test(v) ? `"${v}"` : v}`)} />}
             {submitted && (
-              <Button variant="outline" size="sm" className="w-full" onClick={() => { setText(""); setRange(DEFAULT_RANGE); setSubmitted(null); setSelected(null); }}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => { setText(""); setRange(DEFAULT_RANGE); setSubmitted(null); setSelected(null); }}
+              >
                 <RotateCcw className="size-3.5" />
                 Reset explorer
               </Button>

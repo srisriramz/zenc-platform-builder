@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import type { HealthState } from "@/schemas";
+import { drillHref } from "@/lib/use-nav";
 
 const ORDER: HealthState[] = ["healthy", "degraded", "stale", "unknown"];
 const COLOR: Record<HealthState, string> = {
@@ -50,14 +52,31 @@ export function IngestionHealth({ counts }: { counts: Record<HealthState, number
           <span className="text-[10px] uppercase tracking-wide text-muted-foreground">sources</span>
         </div>
       </div>
-      <ul className="space-y-1.5 text-sm">
-        {ORDER.map((k) => (
-          <li key={k} className="flex items-center gap-2">
-            <span className="size-2 rounded-full" style={{ background: COLOR[k] }} aria-hidden />
-            <span className="text-muted-foreground">{LABEL[k]}</span>
-            <span className="tabular-nums font-medium">{counts[k] ?? 0}</span>
-          </li>
-        ))}
+      <ul className="space-y-0.5 text-sm">
+        {ORDER.map((k) => {
+          const n = counts[k] ?? 0;
+          const row = (
+            <>
+              <span className="size-2 rounded-full" style={{ background: COLOR[k] }} aria-hidden />
+              <span className="text-muted-foreground">{LABEL[k]}</span>
+              <span className="tabular-nums font-medium">{n}</span>
+            </>
+          );
+          return (
+            <li key={k}>
+              {n > 0 ? (
+                <Link
+                  href={drillHref("/telemetry", { health: k })}
+                  className="flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-accent"
+                >
+                  {row}
+                </Link>
+              ) : (
+                <span className="flex items-center gap-2 px-1.5 py-1 opacity-60">{row}</span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

@@ -1,15 +1,28 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { useTelemetrySources } from "@/hooks/use-siem";
+import { useNavParams } from "@/lib/use-nav";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/primitives";
-import { EmptyState, QueryErrorState } from "@/components/states";
+import { EmptyState, LoadingState, QueryErrorState } from "@/components/states";
 import { LiveIngestionDashboard } from "@/components/siem/ingestion/live-ingestion-dashboard";
 
 export default function IngestionPage() {
+  return (
+    <React.Suspense fallback={<LoadingState label="Loading throughput…" />}>
+      <IngestionInner />
+    </React.Suspense>
+  );
+}
+
+function IngestionInner() {
   const sources = useTelemetrySources();
+  const { params, setParams } = useNavParams();
+  const selectedSourceId = params.get("source");
+  const familyFilter = params.get("family");
 
   return (
     <>
@@ -44,7 +57,15 @@ export default function IngestionPage() {
         </EmptyState>
       )}
 
-      {sources.data && sources.data.length > 0 && <LiveIngestionDashboard sources={sources.data} />}
+      {sources.data && sources.data.length > 0 && (
+        <LiveIngestionDashboard
+          sources={sources.data}
+          selectedSourceId={selectedSourceId}
+          familyFilter={familyFilter}
+          onSelectSource={(id) => setParams({ source: id })}
+          onFilterFamily={(f) => setParams({ family: f, source: null })}
+        />
+      )}
     </>
   );
 }

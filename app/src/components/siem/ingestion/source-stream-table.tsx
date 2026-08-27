@@ -10,10 +10,14 @@ export function SourceStreamTable({
   sources,
   history,
   latest,
+  selectedId,
+  onSelect,
 }: {
   sources: LiveSource[];
   history: LiveFrame[];
   latest: LiveFrame;
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
 }) {
   const rows = sources
     .map((s) => {
@@ -39,7 +43,12 @@ export function SourceStreamTable({
       </TableHeader>
       <TableBody>
         {rows.map(({ s, sample, series, share }) => (
-          <TableRow key={s.id}>
+          <TableRow
+            key={s.id}
+            data-state={selectedId === s.id ? "selected" : undefined}
+            className={onSelect ? "cursor-pointer" : undefined}
+            onClick={() => onSelect?.(s.id)}
+          >
             <TableCell>
               <div className="font-medium">{s.label}</div>
               <div className="font-mono text-[11px] text-muted-foreground">{s.id}</div>

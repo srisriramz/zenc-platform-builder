@@ -15,6 +15,8 @@ import { DegradedSourceState } from "@/components/states";
 import { LiveAreaChart } from "./live-area-chart";
 import { IngestionHealth } from "./ingestion-health";
 import { SourceStreamTable } from "./source-stream-table";
+import { SourceDrillPanel } from "./source-drill-panel";
+import { X } from "lucide-react";
 
 const FAMILY_BAR: Record<string, string> = {
   windows: "bg-[var(--info)]",
@@ -25,7 +27,19 @@ const FAMILY_BAR: Record<string, string> = {
   email: "bg-[var(--sev-informational)]",
 };
 
-export function LiveIngestionDashboard({ sources }: { sources: ConnectorRuntime[] }) {
+export function LiveIngestionDashboard({
+  sources,
+  selectedSourceId,
+  familyFilter,
+  onSelectSource,
+  onFilterFamily,
+}: {
+  sources: ConnectorRuntime[];
+  selectedSourceId?: string | null;
+  familyFilter?: string | null;
+  onSelectSource?: (id: string | null) => void;
+  onFilterFamily?: (family: string | null) => void;
+}) {
   const liveSources = React.useMemo<LiveSource[]>(
     () =>
       sources.map((s) => ({
@@ -40,6 +54,10 @@ export function LiveIngestionDashboard({ sources }: { sources: ConnectorRuntime[
   );
 
   const { history, latest, paused, togglePaused, tickMs } = useLiveIngestion(liveSources);
+
+  const selectedLive = liveSources.find((s) => s.id === selectedSourceId) ?? null;
+  const selectedRuntime = sources.find((s) => s.telemetry_source_id === selectedSourceId) ?? null;
+  const tableSources = familyFilter ? liveSources.filter((s) => s.family === familyFilter) : liveSources;
 
   const epsSeries = history.map((f) => ({ ago: latest.t - f.t, value: f.totalEps }));
   const bpsSeries = history.map((f) => ({ ago: latest.t - f.t, value: f.totalBps }));
@@ -66,6 +84,7 @@ export function LiveIngestionDashboard({ sources }: { sources: ConnectorRuntime[
       value: bps,
       display: formatBytesRate(bps),
       barClass: FAMILY_BAR[family],
+      active: family === familyFilter,
     }))
     .sort((a, b) => b.value - a.value);
 
@@ -142,14 +161,17 @@ export function LiveIngestionDashboard({ sources }: { sources: ConnectorRuntime[
             {familyBars.length === 0 ? (
               <p className="text-sm text-muted-foreground">No bandwidth right now.</p>
             ) : (
-              <BarList data={familyBars} />
+              <BarList
+                data={familyBars}
+                onSelect={onFilterFamily ? (k) => onFilterFamily(k === familyFilter ? null : k) : undefined}
+              />
             )}
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>Ingestion health</CardTitle>
-            <p className="text-sm text-muted-foreground">{sources.length} connected sources.</p>
+            <p className="text-sm text-muted-foreground">{sources.length} connected sources — click a band to filter connectors.</p>
           </CardHeader>
           <CardContent>
             <IngestionHealth counts={healthCounts} />
@@ -157,15 +179,39 @@ export function LiveIngestionDashboard({ sources }: { sources: ConnectorRuntime[
         </Card>
       </div>
 
+      {selectedLive && selectedRuntime && (
+        <SourceDrillPanel
+          source={selectedLive}
+          runtime={selectedRuntime}
+          history={history}
+          latest={latest}
+          onClose={() => onSelectSource?.(null)}
+        />
+      )}
+
       <Card>
-        <CardHeader>
-          <CardTitle>Per-source streams</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Live events/sec, bandwidth, and 24h projections per connector. Trend is the last 90 seconds.
-          </p>
+        <CardHeader className="flex-row items-start justify-between">
+          <div>
+            <CardTitle>Per-source streams</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Live events/sec, bandwidth, and 24h projections per connector. Click a row to drill in. Trend is the last 90 seconds.
+            </p>
+          </div>
+          {familyFilter && (
+            <Button variant="ghost" size="sm" onClick={() => onFilterFamily?.(null)}>
+              <X className="size-3.5" />
+              {FAMILY_INGESTION_PROFILE[familyFilter as keyof typeof FAMILY_INGESTION_PROFILE]?.label ?? familyFilter} only
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
-          <SourceStreamTable sources={liveSources} history={history} latest={latest} />
+          <SourceStreamTable
+            sources={tableSources}
+            history={history}
+            latest={latest}
+            selectedId={selectedSourceId}
+            onSelect={onSelectSource ? (id) => onSelectSource(id === selectedSourceId ? null : id) : undefined}
+          />
         </CardContent>
       </Card>
     </div>

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, DatabaseZap, PlugZap, ShieldQuestion } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useTelemetrySources, useQuarantineQueue } from "@/hooks/use-siem";
 import { useAudit } from "@/hooks/use-platform";
+import { drillHref } from "@/lib/use-nav";
 import { PageHeader } from "@/components/shell/page-header";
 import { StatTile, StatGrid } from "@/components/stat-tile";
 import { ConnectorTable } from "@/components/siem/connector-health";
@@ -21,6 +22,7 @@ const AUDIT_TONE: Record<string, TimelineItem["tone"]> = {
 };
 
 export default function SiemDashboardPage() {
+  const router = useRouter();
   const sources = useTelemetrySources();
   const quarantine = useQuarantineQueue();
   const audit = useAudit();
@@ -64,23 +66,23 @@ export default function SiemDashboardPage() {
       ) : (
         <StatGrid>
           <div className="anim-rise">
-            <StatTile label="Connectors" value={rows.length} sub={`${rows.length - degraded.length} healthy`} icon={PlugZap} tone="primary" />
+            <StatTile label="Connectors" value={rows.length} sub={`${rows.length - degraded.length} healthy`} tone="primary" href="/telemetry" />
           </div>
           <div className="anim-rise anim-delay-1">
             <StatTile
               label="Needing attention"
               value={degraded.length}
               tone={degraded.length ? "warning" : "success"}
-              icon={ShieldQuestion}
               sub={degraded.map((d) => d.family).join(", ") || "none"}
+              href={degraded.length ? drillHref("/telemetry", { health: "degraded,stale,unknown" }) : "/telemetry"}
             />
           </div>
           <div className="anim-rise anim-delay-2">
             <StatTile
               label="Events ingested / 24h"
               value={formatCount(events24h)}
-              icon={DatabaseZap}
               sub={`stream total · worst lag ${Math.round(worstLag)}s`}
+              href="/ingestion"
             />
           </div>
           <div className="anim-rise anim-delay-3">
@@ -88,8 +90,8 @@ export default function SiemDashboardPage() {
               label="Failed schema validation / 24h"
               value={formatCount(failed24h)}
               tone={failed24h ? "warning" : "success"}
-              icon={Activity}
               sub={`quarantined on arrival · ${sampleQuarantined} in the explorable sample`}
+              href={drillHref("/telemetry", { tab: "quarantine" })}
             />
           </div>
         </StatGrid>
@@ -98,8 +100,16 @@ export default function SiemDashboardPage() {
       {degraded.length > 0 && (
         <div className="mt-4">
           <DegradedSourceState>
-            {degraded.map((d) => `${d.connector_label} (${d.health})`).join("; ")}. Detection coverage for these families
-            is degraded until the connector recovers.
+            {degraded.map((d, i) => (
+              <span key={d.telemetry_source_id}>
+                {i > 0 && "; "}
+                <Link href={drillHref("/telemetry", { source: d.telemetry_source_id })} className="underline decoration-dotted underline-offset-2 hover:text-foreground">
+                  {d.connector_label}
+                </Link>{" "}
+                ({d.health})
+              </span>
+            ))}
+            . Detection coverage for these families is degraded until the connector recovers.
           </DegradedSourceState>
         </div>
       )}
@@ -111,7 +121,13 @@ export default function SiemDashboardPage() {
             <Link href="/telemetry">Manage connectors</Link>
           </Button>
         </CardHeader>
-        <CardContent>{sources.isLoading ? <TableSkeleton cols={7} /> : <ConnectorTable sources={rows} />}</CardContent>
+        <CardContent>
+          {sources.isLoading ? (
+            <TableSkeleton cols={7} />
+          ) : (
+            <ConnectorTable sources={rows} onSelect={(s) => router.push(drillHref("/telemetry", { source: s.telemetry_source_id }))} />
+          )}
+        </CardContent>
       </Card>
 
       <Card className="mt-6">

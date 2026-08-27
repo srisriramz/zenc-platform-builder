@@ -7,6 +7,7 @@ import {
   fetchAdminUsers,
   fetchAudit,
   fetchBootstrap,
+  fetchDetectionAnalytics,
   fetchFrameworks,
   fetchPolicies,
   fetchSessionCapabilities,
@@ -64,4 +65,13 @@ export function useAdminUsers() {
 export function usePolicies() {
   const ctx = useSessionContext();
   return useQuery({ queryKey: ["policies", ctx?.userId, ctx?.tenantId], queryFn: () => fetchPolicies(ctx!), enabled: !!ctx });
+}
+
+export function useDetectionAnalytics() {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["detection-analytics", ctx?.userId, ctx?.tenantId],
+    queryFn: () => fetchDetectionAnalytics(ctx!),
+    enabled: !!ctx,
+  });
 }

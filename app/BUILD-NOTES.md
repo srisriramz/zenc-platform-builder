@@ -105,6 +105,23 @@ component API, no dependency on the CLI.
 - **SIEM Dashboard** and **Telemetry & Connectors** screens with connector
   health, ingestion lag, 24h volume, schema-validation failures, and the
   quarantine queue.
+- **Entities at Risk** (`/entities`) — the seeded, *indicative* UEBA
+  stand-in. Per-user/host risk score derived transparently from signal
+  *ratios* in the sample (not ML, not baselining — that stays Phase 1.5);
+  every signal drills to its contributing events. Risk badges also appear on
+  entities in the Log Explorer.
+- **Analytics** (`/analytics`) — a role-aware reporting layer (a contract
+  consumer, not a cross-product god-view) with three presets: **Detection
+  Analytics** (SIEM, live now — volume trend, connector reliability,
+  telemetry-family coverage staging, quarantine causes, event-type mix,
+  entity-risk distribution), **SOC Manager** (M4 stub), **Executive/CISO**
+  (M5 stub, degrades to whatever the tenant is entitled to). Default preset
+  follows the viewer's role. New roles `ciso` + `soc_manager` (read-only,
+  `reporting.view` + `audit.view`) with matching demo personas.
+- **Interactive drill-down** — dashboards are URL-param driven: stat tiles,
+  chart marks, table rows, legend items, and degraded-source names all link
+  into the filtered operational screens; the Log Explorer hydrates a query
+  from the URL and auto-runs; histogram bars are click-to-zoom.
 - **Traffic & Ingestion** (`/ingestion`) — a *simulated-live* throughput
   dashboard: rolling events/sec and bandwidth area charts, per-source stream
   table with 90-second sparklines, bandwidth-by-family bars, an ingestion-

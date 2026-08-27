@@ -13,6 +13,7 @@ import { parseQuery, type ParseError } from "@/lib/query/parser";
 import { runQuery, type EvalContext, type RunQueryError, type RunQueryResult } from "@/lib/query/evaluate";
 import type { NormalizedEvent } from "@/schemas";
 import { TENANT_MAP } from "@/data/platform";
+import { dailyVolumeSeries } from "@/data/ingestion-profile";
 
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
 
@@ -191,6 +192,75 @@ export async function fetchEntityRiskDetail(ctx: SessionContext, entityType: str
   if (!risk) throw new AccessError("permission_denied", "No risk record for that entity in this tenant.");
   return risk;
 }
+
+// ---------------------------------------------------------------------------
+// Analytics (cross-product reporting layer — a consumer, not a god-view)
+// ---------------------------------------------------------------------------
+
+const HEALTH_FACTOR: Record<string, number> = { healthy: 1, degraded: 0.55, unknown: 0.7, stale: 0.33 };
+
+export async function fetchDetectionAnalytics(ctx: SessionContext) {
+  await gate("detection-analytics", 200);
+  assertCan(ctx, "reporting.view");
+  assertEntitlement(ctx, "has_siem");
+  const store = getStore();
+  const sources = store.telemetrySources.filter((s) => s.tenant_id === ctx.tenantId);
+  const sampleEvents = store.normalizedEvents.filter((e) => e.tenant_id === ctx.tenantId);
+
+  const volumeTrend = dailyVolumeSeries(
+    sources.map((s) => ({ family: s.family, nominalEps: s.nominal_eps, healthFactor: HEALTH_FACTOR[s.health] ?? 1 })),
+    store.demoNowIso,
+    14,
+  );
+
+  const sourceReliability = sources.map((s) => ({
+    id: s.telemetry_source_id,
+    label: s.connector_label,
+    family: s.family,
+    health: s.health,
+    lag_seconds: s.ingestion_lag_seconds ?? 0,
+    events_24h: s.events_ingested_24h ?? 0,
+    failed_ratio: (s.events_ingested_24h ?? 0) > 0 ? (s.schema_validation_failures_24h ?? 0) / (s.events_ingested_24h ?? 1) : 0,
+  }));
+
+  const ALL_FAMILIES = ["windows", "linux_syslog", "firewall", "cloud", "identity", "email"] as const;
+  const familyCoverage = ALL_FAMILIES.map((family) => {
+    const matching = sources.filter((s) => s.family === family);
+    const healthy = matching.filter((s) => s.health === "healthy");
+    return {
+      family,
+      connected: matching.length > 0,
+      healthy: healthy.length > 0,
+      degraded: matching.length > 0 && healthy.length === 0,
+    };
+  });
+
+  const quarantineByReason = new Map<string, number>();
+  for (const e of sampleEvents) {
+    if (e.normalization_status !== "quarantined" || !e.quarantine_reason) continue;
+    const key = e.quarantine_reason.split(":")[0];
+    quarantineByReason.set(key, (quarantineByReason.get(key) ?? 0) + 1);
+  }
+
+  const eventTypeMix = new Map<string, number>();
+  for (const e of sampleEvents) if (e.normalization_status === "normalized") eventTypeMix.set(e.event_type, (eventTypeMix.get(e.event_type) ?? 0) + 1);
+
+  const riskBands = { critical: 0, high: 0, elevated: 0, low: 0 };
+  for (const r of store.entityRisk.filter((r) => r.tenant_id === ctx.tenantId)) riskBands[r.band]++;
+
+  return {
+    demoNowIso: store.demoNowIso,
+    volumeTrend,
+    sourceReliability,
+    familyCoverage,
+    quarantineByReason: [...quarantineByReason.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
+    eventTypeMix: [...eventTypeMix.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count).slice(0, 8),
+    riskBands,
+    sampleSize: sampleEvents.filter((e) => e.normalization_status === "normalized").length,
+  };
+}
+
+export type DetectionAnalytics = Awaited<ReturnType<typeof fetchDetectionAnalytics>>;
 
 // ---------------------------------------------------------------------------
 // SIEM — Log Explorer

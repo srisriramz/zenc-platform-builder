@@ -29,3 +29,35 @@ export const FAMILY_INGESTION_PROFILE: Record<TelemetrySourceFamily, FamilyInges
 export function nominalEps(family: TelemetrySourceFamily, volumeWeight: number): number {
   return Math.round(volumeWeight * FAMILY_INGESTION_PROFILE[family].eps_per_weight);
 }
+
+/**
+ * Deterministic N-day daily-volume trend (events + bytes) for a set of sources.
+ * Weekday pattern + a fixed pseudo-random wobble — used by the analytics
+ * volume-trend charts. `endIso` is the most recent day (the demo clock).
+ */
+export function dailyVolumeSeries(
+  sources: { family: TelemetrySourceFamily; nominalEps: number; healthFactor: number }[],
+  endIso: string,
+  days = 14,
+): { dateIso: string; events: number; bytes: number }[] {
+  const end = new Date(endIso);
+  const out: { dateIso: string; events: number; bytes: number }[] = [];
+  for (let d = days - 1; d >= 0; d--) {
+    const day = new Date(end);
+    day.setUTCDate(day.getUTCDate() - d);
+    const dow = day.getUTCDay();
+    const weekday = dow === 0 || dow === 6 ? 0.72 : 1;
+    // stable wobble from the day-of-year
+    const doy = Math.floor((day.getTime() - Date.UTC(day.getUTCFullYear(), 0, 0)) / 86_400_000);
+    const wobble = 0.9 + ((Math.sin(doy * 2.3) + 1) / 2) * 0.2;
+    let events = 0;
+    let bytes = 0;
+    for (const s of sources) {
+      const dayEvents = s.nominalEps * 86_400 * s.healthFactor * weekday * wobble;
+      events += dayEvents;
+      bytes += dayEvents * FAMILY_INGESTION_PROFILE[s.family].avg_event_bytes;
+    }
+    out.push({ dateIso: day.toISOString().slice(0, 10), events: Math.round(events), bytes: Math.round(bytes) });
+  }
+  return out;
+}

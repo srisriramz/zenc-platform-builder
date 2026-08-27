@@ -8,6 +8,8 @@ export type RoleId =
   | "analyst"
   | "senior_analyst"
   | "approver"
+  | "soc_manager"
+  | "ciso"
   | "admin"
   | "reviewer"
   | "auditor";
@@ -33,6 +35,7 @@ export type Permission =
   | "action.request"
   | "action.approve"
   | "evidence.review"
+  | "reporting.view" // cross-product analytics / KPI dashboards
   | "admin.identity"
   | "admin.policy"
   | "audit.view";
@@ -42,7 +45,7 @@ export const ROLES: Record<RoleId, Role> = {
     id: "analyst",
     label: "SOC Analyst",
     description: "Works telemetry and cases; can query, triage, and request actions.",
-    permissions: ["siem.view", "siem.query", "siem.export", "rule.view", "soc.view", "case.work", "action.request"],
+    permissions: ["siem.view", "siem.query", "siem.export", "rule.view", "soc.view", "case.work", "action.request", "reporting.view"],
   },
   senior_analyst: {
     id: "senior_analyst",
@@ -50,7 +53,7 @@ export const ROLES: Record<RoleId, Role> = {
     description: "Analyst plus detection-rule authoring and peer review.",
     permissions: [
       "siem.view", "siem.query", "siem.export", "rule.view", "rule.propose", "rule.review",
-      "soc.view", "case.work", "action.request",
+      "soc.view", "case.work", "action.request", "reporting.view",
     ],
   },
   approver: {
@@ -59,11 +62,23 @@ export const ROLES: Record<RoleId, Role> = {
     description: "Independent approval of action requests and rule promotion to enabled.",
     permissions: ["siem.view", "rule.view", "rule.review", "rule.enable", "soc.view", "action.approve", "audit.view"],
   },
+  soc_manager: {
+    id: "soc_manager",
+    label: "SOC Manager",
+    description: "Read-only operational oversight — queue depth, workload, closure mix, KPI dashboards. Does not work cases or approve actions.",
+    permissions: ["siem.view", "rule.view", "soc.view", "reporting.view", "audit.view"],
+  },
+  ciso: {
+    id: "ciso",
+    label: "CISO",
+    description: "Read-only executive view — coverage, MTTD/MTTR trend, incident posture across SIEM and SOAR. No operational actions.",
+    permissions: ["siem.view", "soc.view", "reporting.view", "audit.view"],
+  },
   admin: {
     id: "admin",
     label: "Platform Admin",
     description: "Identity, entitlement, and policy administration. Not an approver by default.",
-    permissions: ["siem.view", "soc.view", "rule.view", "admin.identity", "admin.policy", "audit.view"],
+    permissions: ["siem.view", "soc.view", "rule.view", "reporting.view", "admin.identity", "admin.policy", "audit.view"],
   },
   reviewer: {
     id: "reviewer",
@@ -75,7 +90,7 @@ export const ROLES: Record<RoleId, Role> = {
     id: "auditor",
     label: "Auditor",
     description: "Read-only access to audit trail and platform state. Cannot change anything.",
-    permissions: ["siem.view", "soc.view", "rule.view", "audit.view"],
+    permissions: ["siem.view", "soc.view", "rule.view", "reporting.view", "audit.view"],
   },
 };
 
@@ -200,6 +215,25 @@ export const USERS: User[] = [
       { tenant_id: "tenant-northwind-bank", role: "approver" },
       { tenant_id: "tenant-northwind-markets", role: "approver" },
       { tenant_id: "tenant-summit-cu", role: "approver" },
+    ],
+  },
+  {
+    user_id: "user-ravi-manager",
+    display_name: "Ravi Menon",
+    email: "ravi.menon@demo.zenc.example",
+    roles: [
+      { tenant_id: "tenant-northwind-bank", role: "soc_manager" },
+      { tenant_id: "tenant-summit-cu", role: "soc_manager" },
+    ],
+  },
+  {
+    user_id: "user-ava-ciso",
+    display_name: "Ava Chen",
+    email: "ava.chen@demo.zenc.example",
+    roles: [
+      { tenant_id: "tenant-northwind-bank", role: "ciso" },
+      { tenant_id: "tenant-northwind-markets", role: "ciso" },
+      { tenant_id: "tenant-summit-cu", role: "ciso" },
     ],
   },
   {

@@ -31,11 +31,22 @@ describe("permission checks are enforced regardless of UI", () => {
 
   it("no role bundles both authoring and approval of rules", () => {
     // separation of duties: rule.propose and rule.enable never co-occur
-    const conflicted = ["analyst", "senior_analyst", "approver", "admin", "reviewer", "auditor"].filter((r) => {
+    const conflicted = ROLE_IDS.filter((r) => {
       const perms = permissionsFor({ userId: pick(r), tenantId: "tenant-northwind-bank" });
       return perms.includes("rule.propose") && perms.includes("rule.enable");
     });
     expect(conflicted).toEqual([]);
+  });
+
+  it("CISO and SOC Manager are read-only — reporting + audit, nothing operational", () => {
+    for (const r of ["ciso", "soc_manager"] as const) {
+      const perms = permissionsFor({ userId: pick(r), tenantId: "tenant-northwind-bank" });
+      expect(perms).toContain("reporting.view");
+      expect(perms).not.toContain("case.work");
+      expect(perms).not.toContain("action.approve");
+      expect(perms).not.toContain("rule.enable");
+      expect(perms).not.toContain("admin.policy");
+    }
   });
 
   it("an auditor is read-only — no query, no approve, no admin", () => {
@@ -93,11 +104,24 @@ describe("assertEntitlement", () => {
   });
 });
 
+const ROLE_IDS = [
+  "analyst",
+  "senior_analyst",
+  "approver",
+  "soc_manager",
+  "ciso",
+  "admin",
+  "reviewer",
+  "auditor",
+] as const;
+
 function pick(role: string): string {
   return {
     analyst: "user-priya-analyst",
     senior_analyst: "user-marcus-senior",
     approver: "user-dana-approver",
+    soc_manager: "user-ravi-manager",
+    ciso: "user-ava-ciso",
     admin: "user-sam-admin",
     reviewer: "user-lena-reviewer",
     auditor: "user-omar-auditor",

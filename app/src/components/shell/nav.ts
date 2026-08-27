@@ -10,6 +10,7 @@ import {
   Gauge,
   KeyRound,
   LayoutDashboard,
+  LineChart,
   Network,
   Radar,
   ScrollText,
@@ -27,7 +28,7 @@ import type { ProductArea } from "@/store/session";
 export interface NavItem {
   href: string;
   label: string;
-  section: "SIEM" | "SOAR" | "Platform";
+  section: "SIEM" | "SOAR" | "Analytics" | "Platform";
   product: ProductArea | "platform";
   icon: LucideIcon;
   requires?: "has_siem" | "has_soc";
@@ -54,6 +55,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/approvals", label: "Approval Queue", section: "SOAR", product: "soc", icon: BadgeCheck, requires: "has_soc", permission: "soc.view", milestone: "M4" },
   { href: "/playbooks", label: "Playbooks", section: "SOAR", product: "soc", icon: ScrollText, requires: "has_soc", permission: "soc.view", milestone: "M4" },
   { href: "/reporting", label: "SOAR Reporting", section: "SOAR", product: "soc", icon: Activity, requires: "has_soc", permission: "soc.view", milestone: "M5" },
+
+  // ---- Analytics (cross-product reporting layer; degrades when a product is absent) ----
+  { href: "/analytics", label: "Analytics", section: "Analytics", product: "platform", icon: LineChart, permission: "reporting.view" },
 
   // ---- Platform ----
   { href: "/tenants", label: "Tenants", section: "Platform", product: "platform", icon: Building2, permission: "admin.identity" },

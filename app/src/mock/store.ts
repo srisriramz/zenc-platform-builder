@@ -13,6 +13,7 @@ import {
   type Tenant,
 } from "@/data/platform";
 import { TELEMETRY_SOURCE_CONFIGS } from "@/data/telemetry-sources";
+import { FAMILY_INGESTION_PROFILE, nominalEps } from "@/data/ingestion-profile";
 import { generateEvents } from "@/data/events";
 import { ATTACK_TECHNIQUES, ATTACK_TACTICS } from "@/data/frameworks/attack";
 import { D3FEND_TECHNIQUES } from "@/data/frameworks/d3fend";
@@ -22,6 +23,9 @@ export interface ConnectorRuntime extends TelemetrySource {
   health_note?: string;
   quarantined_24h: number;
   events_total: number;
+  /** steady-state throughput profile for the simulated-live ingestion view */
+  nominal_eps: number;
+  avg_event_bytes: number;
 }
 
 function buildTelemetrySources(normalized: NormalizedEvent[]): ConnectorRuntime[] {
@@ -48,6 +52,8 @@ function buildTelemetrySources(normalized: NormalizedEvent[]): ConnectorRuntime[
       schema_validation_failures_24h: last24.filter((e) => e.normalization_status === "quarantined").length,
       quarantined_24h: last24.filter((e) => e.normalization_status === "quarantined").length,
       events_total: mine.length,
+      nominal_eps: nominalEps(cfg.family, cfg.volume_weight),
+      avg_event_bytes: FAMILY_INGESTION_PROFILE[cfg.family].avg_event_bytes,
     };
   });
 }

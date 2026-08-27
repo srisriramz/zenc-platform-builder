@@ -46,6 +46,9 @@ export default function SiemDashboardPage() {
         description="Detect-layer health at a glance. ZenC SIEM runs standalone — nothing on this screen depends on ZenC SOC."
       >
         <Button asChild variant="outline" size="sm">
+          <Link href="/ingestion">Traffic &amp; Ingestion</Link>
+        </Button>
+        <Button asChild variant="outline" size="sm">
           <Link href="/log-explorer">Open Log Explorer</Link>
         </Button>
       </PageHeader>

@@ -17,6 +17,7 @@ import {
   Siren,
   Table2,
   Users,
+  Waves,
   Workflow,
 } from "lucide-react";
 import type { Permission } from "@/data/platform";
@@ -37,6 +38,7 @@ export const NAV_ITEMS: NavItem[] = [
   // ---- SIEM ----
   { href: "/siem-dashboard", label: "SIEM Dashboard", section: "SIEM", product: "siem", icon: LayoutDashboard, requires: "has_siem", permission: "siem.view" },
   { href: "/telemetry", label: "Telemetry & Connectors", section: "SIEM", product: "siem", icon: Network, requires: "has_siem", permission: "siem.view" },
+  { href: "/ingestion", label: "Traffic & Ingestion", section: "SIEM", product: "siem", icon: Waves, requires: "has_siem", permission: "siem.view" },
   { href: "/log-explorer", label: "Log Explorer", section: "SIEM", product: "siem", icon: Table2, requires: "has_siem", permission: "siem.query" },
   { href: "/correlation", label: "Correlation", section: "SIEM", product: "siem", icon: Radar, requires: "has_siem", permission: "siem.view", milestone: "M2" },
   { href: "/detections", label: "Detection Engineering", section: "SIEM", product: "siem", icon: ShieldHalf, requires: "has_siem", permission: "rule.view", milestone: "M3" },

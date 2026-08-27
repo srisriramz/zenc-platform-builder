@@ -101,6 +101,14 @@ component API, no dependency on the CLI.
 - **SIEM Dashboard** and **Telemetry & Connectors** screens with connector
   health, ingestion lag, 24h volume, schema-validation failures, and the
   quarantine queue.
+- **Traffic & Ingestion** (`/ingestion`) — a *simulated-live* throughput
+  dashboard: rolling events/sec and bandwidth area charts, per-source stream
+  table with 90-second sparklines, bandwidth-by-family bars, an ingestion-
+  health donut, and 24h projections. Driven by a pure deterministic sampler
+  (`lib/live-feed.ts`) advanced by a timer (`hooks/use-live-ingestion.ts`),
+  pausable, honours `prefers-reduced-motion` (slower tick). Steady-state
+  rates come from `data/ingestion-profile.ts` (family rate × `volume_weight`);
+  this view models the *rate*, the Log Explorer holds the materialised sample.
 
 ## Checkpoint notes (against the bootstrap template)
 

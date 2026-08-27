@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/evidence.schema.json",
+  "title": "Evidence Item",
+  "type": "object",
+  "required": [
+    "evidence_id", "tenant_id", "origin", "submitted_by", "submitted_at",
+    "review_state", "confidence"
+  ],
+  "properties": {
+    "evidence_id": { "type": "string" },
+    "tenant_id": { "type": "string" },
+    "origin": {
+      "type": "string",
+      "enum": ["manual", "soc"],
+      "description": "manual = submitted directly in Assessment; soc = proposed via the SOC suggestion path. Both use the identical review flow."
+    },
+    "linked_question_id": { "type": "string" },
+    "linked_case_id": {
+      "type": "string",
+      "description": "Present only when origin is 'soc'."
+    },
+    "reference_type": {
+      "type": "string",
+      "enum": ["file", "link", "note"]
+    },
+    "reference": { "type": "string" },
+    "submitted_by": { "type": "string" },
+    "submitted_at": { "type": "string", "format": "date-time" },
+    "review_state": {
+      "type": "string",
+      "enum": ["submitted", "under_review", "approved", "rejected"]
+    },
+    "reviewer_id": { "type": "string" },
+    "reviewer_comment": { "type": "string" },
+    "reviewed_at": { "type": "string", "format": "date-time" },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Evidence-confidence value. Independent of any assessment maturity_score."
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "Integrity hash for tamper-evidence, mirroring SOC evidence custody requirements."
+    },
+    "supersedes_evidence_id": {
+      "type": ["string", "null"],
+      "description": "If this item corrects a prior one, the prior item is never edited in place — this links to it instead."
+    }
+  },
+  "if": {
+    "properties": { "review_state": { "const": "approved" } }
+  },
+  "then": {
+    "required": ["reviewer_id", "reviewed_at"]
+  }
+}

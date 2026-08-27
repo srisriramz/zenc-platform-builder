@@ -1,0 +1,52 @@
+{
+  "rule_id": "rule-demo-encoded-powershell",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "name": "Encoded PowerShell spawned from Office process",
+  "version": "1.4.0",
+  "lifecycle_state": "enabled",
+  "proposed_by": "detection-engineer-agent",
+  "enabled_by": "user-demo-soc-lead-01",
+  "rule_type": "sequence",
+  "definition": {
+    "steps": [
+      { "match": "process_creation", "parent_image_contains": "WINWORD.EXE|EXCEL.EXE|OUTLOOK.EXE" },
+      { "match": "process_creation", "image_contains": "powershell.exe", "command_line_contains": "-enc" }
+    ],
+    "within_seconds": 30
+  },
+  "severity": "high",
+  "attack_mapping": [
+    { "tactic": "execution", "technique_id": "T1059.001", "technique_name": "PowerShell" }
+  ],
+  "d3fend_mapping": [
+    { "d3fend_technique_id": "D3-PSA", "d3fend_technique_name": "Process Spawn Analysis", "category": "detect" }
+  ],
+  "regression_test_results": [
+    {
+      "run_at": "2026-08-10T11:00:00Z",
+      "corpus_id": "corpus-demo-office-macro-chain",
+      "events_evaluated": 5000,
+      "expected_matches": 12,
+      "observed_matches": 12,
+      "missed_expected": 0,
+      "unexpected_matches": 1,
+      "noise_indicator": 0.02,
+      "execution_time_ms": 340,
+      "rule_health": "healthy"
+    }
+  ],
+  "history": [
+    {
+      "from_state": "peer_review",
+      "to_state": "approved",
+      "changed_by": "user-demo-soc-lead-01",
+      "changed_at": "2026-08-10T12:00:00Z"
+    },
+    {
+      "from_state": "approved",
+      "to_state": "enabled",
+      "changed_by": "user-demo-soc-lead-01",
+      "changed_at": "2026-08-10T12:05:00Z"
+    }
+  ]
+}

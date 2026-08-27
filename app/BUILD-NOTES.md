@@ -1,0 +1,104 @@
+# ZenC Platform — build notes
+
+Frontend-only demo built from the `zenc-platform-builder` skill. No backend,
+no real credentials, seeded mock data throughout. Build order and checkpoints
+follow `templates/claude-code-bootstrap.md`.
+
+## Milestone status
+
+| Milestone | Scope | State |
+|---|---|---|
+| **M0** | Scaffold + platform shell | ✅ done |
+| **M1** | SIEM foundation: telemetry, normalization, Log Explorer | ✅ done |
+| M2 | Correlation engine + ATT&CK-mapped rules → alert-envelope | not started |
+| M3 | Detection engineering workflow (agent proposes, human-only enable) | not started |
+| M4 | ZenC SOC: intake → triage → response, 12 agents, approvals | not started |
+| M5 | ATT&CK × D3FEND coverage matrix + SOC reporting | not started |
+
+## Stack
+
+Next.js 16 (App Router, Turbopack), strict TypeScript, Tailwind v4,
+hand-rolled shadcn/ui-style primitives (`components/ui/`), TanStack Query for
+simulated server state, Zustand for the allowed slices only (session, tenant,
+product, theme, sim, sidebar), Recharts, Zod runtime schemas mirroring
+`../schemas/`.
+
+The shadcn CLI in this environment is pre-release and crashes on `init`, so
+the primitives are written directly against the same token names — same
+component API, no dependency on the CLI.
+
+## M0 — what's in
+
+- **App shell**: top bar with product switcher, command palette (⌘K), tenant
+  switcher, role display, theme toggle, environment + simulation indicators,
+  and a **kill-switch status** badge (visible in chrome, not settings).
+- **Non-removable "Interactive Demo with Mock Data" notice** on every screen
+  (`components/shell/demo-notice.tsx`) — do not remove.
+- **Shared services (mock)**: Identity/RBAC-ABAC (`mock/rbac.ts`), tenants +
+  partners, per-tenant entitlements (`has_siem`/`has_soc`/`has_assessment`),
+  Policy Engine with locked non-negotiable fields, append-only Audit, Feature
+  flags via the sim control, Observability via connector health.
+- **RBAC**: 6 roles (analyst, senior analyst, approver, admin, reviewer,
+  auditor); permissions are checked in the mock API, not just hidden in the
+  UI. `rule.enable` / `action.approve` are separate permissions; agents are
+  never modelled as holding them.
+- **Seeded ATT&CK + D3FEND libraries** as static data
+  (`data/frameworks/`) — 24 techniques / 11 tactics, 16 D3FEND techniques.
+  The product maps to them; it never edits them.
+- **Simulation control**: normal / slow / timeout / server error / degraded
+  source / partial results — every required UI state is reachable on demand.
+- **Routes**: all SIEM + SOC + platform routes exist. SOC and later-SIEM
+  screens render an honest roadmap stub that still enforces the real
+  entitlement + RBAC gates.
+
+## M1 — what's in
+
+- **Telemetry**: 6 synthetic source families for Northwind Bank, 4 for
+  Northwind Markets, 0 for Summit Credit Union (SOC-only tenant — proves SIEM
+  can be absent). Health states cover healthy / degraded / stale / unknown.
+- **Deterministic generator** (`data/events.ts`): ~2,400 events over a frozen
+  72h window, each in linked **raw + normalized** form (`raw_payload_ref`
+  lineage). ~2% are **quarantined on arrival** with a format-appropriate
+  reason — visible in a queue, never silently dropped.
+- **Log Explorer** (`app/(app)/log-explorer`):
+  - **Safe bounded query parser** (`lib/query/`): tokenizer + recursive
+    descent → typed AST → pure evaluator. **Never** `eval`, `new Function`,
+    SQL, shell, or a user RegExp (wildcards compile to a linear two-pointer
+    matcher). Field allowlist, operator allowlist per field, hard bounds
+    (query length, condition count, group depth, wildcard count, result rows,
+    90-day time range). Injection characters (`; $ { } \` -- /* */`) are
+    rejected with a specific, positioned error.
+  - Free-text + structured search over the same query; visual query builder
+    (no code editor); time histogram; field statistics with click-to-filter;
+    raw/normalized side-by-side with parser + schema version; event lineage
+    and related-events; saved searches + history (versioned, tenant-scoped
+    localStorage); tenant-safe CSV/JSON export.
+  - **Required states** all implemented: loading, no-results, malformed
+    query, timeout, server error, partial results, stale data, degraded
+    source, access denied, success.
+- **SIEM Dashboard** and **Telemetry & Connectors** screens with connector
+  health, ingestion lag, 24h volume, schema-validation failures, and the
+  quarantine queue.
+
+## Checkpoint notes (against the bootstrap template)
+
+1. Nothing in SIEM depends on SOC being present. `tenant-summit-cu` has
+   `has_siem:false` and every SIEM screen correctly shows "not entitled".
+2. Query + rule-authoring surfaces are structured/bounded — verified by the
+   parser rejecting `event_type = "foo" OR $(rm -rf /)` and
+   `event_type:'; DROP TABLE events;--` with a clear reason.
+3. `alert-envelope` / `correlation-rule` Zod schemas are defined (with the
+   human-only-`enabled` and no-empty-`contributing_event_refs` refinements)
+   ahead of M2/M3 so producers share one shape.
+4. Detection coverage is not yet built (M5); no binary covered/not-covered
+   flag has been introduced anywhere.
+
+## Running
+
+```bash
+cd app
+npm install
+npm run dev      # http://localhost:3000
+npm run build    # production build — passes clean
+npm run lint     # ESLint — passes clean
+```

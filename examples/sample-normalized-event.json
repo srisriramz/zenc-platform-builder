@@ -1,0 +1,17 @@
+{
+  "event_id": "nevt-demo-0001",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "telemetry_source_id": "ts-demo-edr-01",
+  "occurred_at": "2026-08-20T03:14:00Z",
+  "ingested_at": "2026-08-20T03:14:05Z",
+  "event_type": "edr_process_creation",
+  "entities": [
+    { "entity_type": "host", "value": "demo-host-17" },
+    { "entity_type": "user", "value": "demo-user-jsmith" }
+  ],
+  "attack_technique_refs": ["T1059.001"],
+  "parser_version": "edr-parser-v3.4",
+  "schema_version": "1.0",
+  "raw_payload_ref": "seed-fixtures/raw/edr-process-778812.json",
+  "normalization_status": "normalized"
+}

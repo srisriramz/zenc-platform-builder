@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/normalized-event.schema.json",
+  "title": "Normalized Event",
+  "description": "A raw telemetry event after parsing, normalization, and enrichment. What the correlation engine evaluates against. Always linked back to its raw form for lineage.",
+  "type": "object",
+  "required": [
+    "event_id", "tenant_id", "telemetry_source_id", "occurred_at", "ingested_at",
+    "event_type", "raw_payload_ref", "normalization_status"
+  ],
+  "properties": {
+    "event_id": { "type": "string" },
+    "tenant_id": { "type": "string" },
+    "telemetry_source_id": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "ingested_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Used to compute ingestion/collection lag in the SOC pipeline-latency KPI."
+    },
+    "event_type": {
+      "type": "string",
+      "description": "e.g. 'windows_security_4624', 'firewall_deny', 'cloud_iam_policy_change'. Free text, seeded per source family."
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["entity_type", "value"],
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": ["host", "user", "ip", "domain", "hash", "cloud_resource", "email_address"]
+          },
+          "value": { "type": "string" }
+        }
+      }
+    },
+    "attack_technique_refs": {
+      "type": "array",
+      "description": "Optional pre-tagging at the event level (some sources tag natively). Correlation may inherit or confirm this tagging when producing an alert's attack_techniques.",
+      "items": { "type": "string" }
+    },
+    "parser_version": { "type": "string" },
+    "schema_version": { "type": "string" },
+    "raw_payload_ref": {
+      "type": "string",
+      "description": "Pointer to the preserved original raw event for lineage."
+    },
+    "normalization_status": {
+      "type": "string",
+      "enum": ["normalized", "quarantined"]
+    },
+    "quarantine_reason": { "type": "string" }
+  },
+  "if": {
+    "properties": { "normalization_status": { "const": "quarantined" } }
+  },
+  "then": {
+    "required": ["quarantine_reason"]
+  }
+}

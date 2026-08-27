@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/inter-product-event.schema.json",
+  "title": "Inter-Product Event",
+  "description": "Common envelope for every event crossing the SOC/Assessment boundary or entering SOC from an external alert source. See references/inter-product-contracts.md for the canonical event-type table.",
+  "type": "object",
+  "required": [
+    "event_id", "event_type", "schema_version", "occurred_at", "producer",
+    "tenant_id", "correlation_id", "idempotency_key", "data_classification",
+    "provenance", "payload_integrity_hash", "payload"
+  ],
+  "properties": {
+    "event_id": { "type": "string" },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "AlertReceived", "CaseOpened", "CaseClosed", "ResponseActionVerified",
+        "AssessmentFindingPublished", "ApprovedLessonPublished"
+      ]
+    },
+    "schema_version": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "producer": {
+      "type": "string",
+      "enum": ["zenc-soc", "zenc-assessment", "external-alert-source"]
+    },
+    "tenant_id": { "type": "string" },
+    "partner_id": { "type": "string" },
+    "correlation_id": { "type": "string" },
+    "causation_id": { "type": "string" },
+    "idempotency_key": { "type": "string" },
+    "data_classification": {
+      "type": "string",
+      "enum": ["synthetic_demo", "internal", "confidential"]
+    },
+    "provenance": { "type": "string" },
+    "payload_integrity_hash": { "type": "string" },
+    "payload": {
+      "type": "object",
+      "description": "Event-type-specific body. AssessmentFindingPublished payloads must only ever be producer 'zenc-assessment' — see inter-product-contracts.md; SOC never emits this event type directly, only a proposal into Assessment's review queue."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event_type": { "const": "AssessmentFindingPublished" } } },
+      "then": { "properties": { "producer": { "const": "zenc-assessment" } } }
+    }
+  ]
+}

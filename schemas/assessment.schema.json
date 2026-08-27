@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/assessment.schema.json",
+  "title": "ZenC Assessment: Template and Assessment Instance",
+  "definitions": {
+    "responseOption": {
+      "type": "object",
+      "required": ["option_id", "label", "value"],
+      "properties": {
+        "option_id": { "type": "string" },
+        "label": { "type": "string" },
+        "value": { "type": "number" }
+      }
+    },
+    "question": {
+      "type": "object",
+      "required": ["question_id", "text", "response_options", "evidence_requirement"],
+      "properties": {
+        "question_id": { "type": "string" },
+        "text": { "type": "string" },
+        "response_options": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/responseOption" }
+        },
+        "applicability": {
+          "type": "string",
+          "enum": ["applicable", "not_applicable"],
+          "default": "applicable"
+        },
+        "not_applicable_reason": { "type": "string" },
+        "evidence_requirement": {
+          "type": "string",
+          "enum": ["none", "optional", "required"]
+        },
+        "control_mappings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["framework", "control_id"],
+            "properties": {
+              "framework": { "type": "string" },
+              "control_id": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "section": {
+      "type": "object",
+      "required": ["section_id", "title", "questions"],
+      "properties": {
+        "section_id": { "type": "string" },
+        "title": { "type": "string" },
+        "questions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/question" }
+        }
+      }
+    },
+    "template": {
+      "type": "object",
+      "required": ["template_id", "name", "version", "sections"],
+      "properties": {
+        "template_id": { "type": "string" },
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "sections": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/section" }
+        }
+      }
+    },
+    "answer": {
+      "type": "object",
+      "required": ["question_id", "selected_option_id"],
+      "properties": {
+        "question_id": { "type": "string" },
+        "selected_option_id": { "type": "string" },
+        "evidence_id": { "type": "string" },
+        "not_applicable_reason": { "type": "string" }
+      }
+    },
+    "roadmapItem": {
+      "type": "object",
+      "required": ["item_id", "horizon_days", "title"],
+      "properties": {
+        "item_id": { "type": "string" },
+        "horizon_days": { "type": "integer", "enum": [30, 90, 180, 365] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "linked_gap_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "assessment": {
+      "type": "object",
+      "required": [
+        "assessment_id", "tenant_id", "template_id", "template_version",
+        "status", "answers", "created_at"
+      ],
+      "properties": {
+        "assessment_id": { "type": "string" },
+        "tenant_id": { "type": "string" },
+        "template_id": { "type": "string" },
+        "template_version": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "in_progress", "under_review", "completed"]
+        },
+        "answers": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/answer" }
+        },
+        "maturity_score": {
+          "type": "number",
+          "description": "Deterministic, formula-derived. Never blended with evidence_confidence_score."
+        },
+        "evidence_confidence_score": {
+          "type": "number",
+          "description": "Separate from maturity_score by design."
+        },
+        "zsis": {
+          "type": "object",
+          "required": ["value", "indicative"],
+          "properties": {
+            "value": { "type": "number" },
+            "indicative": {
+              "type": "boolean",
+              "const": true,
+              "description": "Must always be true. ZSIS is never a certified/audited value."
+            }
+          }
+        },
+        "roadmap": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/roadmapItem" }
+        },
+        "prior_assessment_id": {
+          "type": ["string", "null"],
+          "description": "Set for a reassessment; comparison against this prior instance is read-only."
+        },
+        "created_at": { "type": "string", "format": "date-time" },
+        "completed_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/definitions/template" },
+    { "$ref": "#/definitions/assessment" }
+  ]
+}

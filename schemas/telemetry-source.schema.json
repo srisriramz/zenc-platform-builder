@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/telemetry-source.schema.json",
+  "title": "Telemetry Source",
+  "description": "A configured connector feeding raw events into ZenC SIEM. Health state here drives both the Log Explorer source filter and the detection coverage view.",
+  "type": "object",
+  "required": ["telemetry_source_id", "tenant_id", "family", "connector_id", "health"],
+  "properties": {
+    "telemetry_source_id": { "type": "string" },
+    "tenant_id": { "type": "string" },
+    "family": {
+      "type": "string",
+      "enum": ["windows", "linux_syslog", "firewall", "cloud", "identity", "email"]
+    },
+    "connector_id": { "type": "string" },
+    "health": {
+      "type": "string",
+      "enum": ["healthy", "degraded", "stale", "unknown"]
+    },
+    "last_event_at": { "type": "string", "format": "date-time" },
+    "ingestion_lag_seconds": { "type": "number" },
+    "events_ingested_24h": { "type": "integer" },
+    "schema_validation_failures_24h": { "type": "integer" }
+  }
+}

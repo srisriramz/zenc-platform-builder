@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/finding-risk.schema.json",
+  "title": "Finding and Risk Register Entry",
+  "definitions": {
+    "finding": {
+      "type": "object",
+      "required": ["finding_id", "tenant_id", "assessment_id", "question_id", "status"],
+      "properties": {
+        "finding_id": { "type": "string" },
+        "tenant_id": { "type": "string" },
+        "assessment_id": { "type": "string" },
+        "question_id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["open", "in_treatment", "closed", "accepted"]
+        },
+        "control_mappings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "framework": { "type": "string" },
+              "control_id": { "type": "string" }
+            }
+          }
+        },
+        "linked_risk_id": { "type": ["string", "null"] },
+        "origin": {
+          "type": "string",
+          "enum": ["assessment", "soc_suggested"],
+          "description": "soc_suggested findings still require full reviewer approval before becoming 'assessment' status."
+        }
+      }
+    },
+    "riskRegisterEntry": {
+      "type": "object",
+      "required": [
+        "risk_id", "tenant_id", "title", "likelihood", "impact", "owner",
+        "due_date", "treatment", "status"
+      ],
+      "properties": {
+        "risk_id": { "type": "string" },
+        "tenant_id": { "type": "string" },
+        "linked_finding_id": { "type": "string" },
+        "title": { "type": "string" },
+        "likelihood": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "impact": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "inherent_risk_score": {
+          "type": "number",
+          "description": "Deterministic function of likelihood and impact."
+        },
+        "owner": { "type": "string" },
+        "due_date": { "type": "string", "format": "date" },
+        "treatment": {
+          "type": "string",
+          "enum": ["accept", "mitigate", "transfer", "avoid"]
+        },
+        "residual_likelihood": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "residual_impact": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "residual_risk_score": { "type": "number" },
+        "status": {
+          "type": "string",
+          "enum": ["open", "treatment_in_progress", "closed"]
+        }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/definitions/finding" },
+    { "$ref": "#/definitions/riskRegisterEntry" }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "agent_run_id": "run-demo-0001",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "case_id": "case-demo-0001",
+  "started_at": "2026-08-20T03:20:00Z",
+  "completed_at": "2026-08-20T04:50:00Z",
+  "message_ids": ["msg-demo-0001"],
+  "total_tool_calls": 3,
+  "elapsed_seconds": 5400,
+  "human_touchpoints": [
+    {
+      "principal_id": "user-demo-soc-lead-01",
+      "action": "approved",
+      "at": "2026-08-20T04:45:00Z",
+      "note": "Approved dry-run isolation per playbook pb-demo-isolate-host."
+    }
+  ],
+  "outcome": "completed",
+  "analyst_feedback": null
+}

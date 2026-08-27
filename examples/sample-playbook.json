@@ -1,0 +1,47 @@
+{
+  "playbook_id": "pb-demo-isolate-host",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "name": "Isolate host on confirmed malicious PowerShell execution",
+  "version": "2.1.0",
+  "lifecycle_state": "enabled",
+  "proposed_by": "response-planner-agent",
+  "enabled_by": "user-demo-soc-lead-01",
+  "steps": [
+    {
+      "step_id": "step-01",
+      "order": 1,
+      "action_class": "A1",
+      "description": "Pull recent process-tree context for the affected host (read-only).",
+      "action_type": "enrich_host_context"
+    },
+    {
+      "step_id": "step-02",
+      "order": 2,
+      "action_class": "A3",
+      "description": "Isolate the affected host from the network (dry-run in this deployment).",
+      "action_type": "isolate_host",
+      "d3fend_mapping": [
+        { "d3fend_technique_id": "D3-NI", "d3fend_technique_name": "Network Isolation", "category": "response" }
+      ]
+    }
+  ],
+  "test_results": {
+    "run_against_synthetic_case_id": "case-demo-synthetic-0099",
+    "passed": true,
+    "notes": "Dry-run isolation verified against synthetic host fixture; rollback confirmed."
+  },
+  "history": [
+    {
+      "from_state": "peer_review",
+      "to_state": "approved",
+      "changed_by": "user-demo-soc-lead-01",
+      "changed_at": "2026-08-10T12:00:00Z"
+    },
+    {
+      "from_state": "approved",
+      "to_state": "enabled",
+      "changed_by": "user-demo-soc-lead-01",
+      "changed_at": "2026-08-10T12:05:00Z"
+    }
+  ]
+}

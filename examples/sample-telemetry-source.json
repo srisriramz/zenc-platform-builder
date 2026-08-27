@@ -1,0 +1,11 @@
+{
+  "telemetry_source_id": "ts-demo-firewall-01",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "family": "firewall",
+  "connector_id": "conn-demo-fw-01",
+  "health": "healthy",
+  "last_event_at": "2026-08-20T03:13:50Z",
+  "ingestion_lag_seconds": 4.2,
+  "events_ingested_24h": 184203,
+  "schema_validation_failures_24h": 3
+}

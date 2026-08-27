@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/action-request.schema.json",
+  "title": "Action Request",
+  "description": "JSON Schema (draft-07) cannot express 'field A != field B' natively. The no-self-approval invariant (requested_by must not equal approved_by) MUST be enforced in application/validation code in addition to this schema — treat that as a hard requirement documented here, not something the schema alone guarantees.",
+  "type": "object",
+  "required": [
+    "action_request_id", "tenant_id", "case_id", "action_class", "action_type",
+    "requested_by", "status"
+  ],
+  "properties": {
+    "action_request_id": { "type": "string" },
+    "tenant_id": { "type": "string" },
+    "case_id": { "type": "string" },
+    "playbook_step_id": {
+      "type": ["string", "null"],
+      "description": "Set if this request came from a playbook step; null for ad hoc requests."
+    },
+    "action_class": {
+      "type": "string",
+      "enum": ["A0", "A1", "A2", "A3", "A4"]
+    },
+    "action_type": { "type": "string" },
+    "requested_by": {
+      "type": "object",
+      "required": ["principal_id", "principal_type"],
+      "properties": {
+        "principal_id": { "type": "string" },
+        "principal_type": { "type": "string", "enum": ["human", "agent"] }
+      }
+    },
+    "approved_by": {
+      "type": ["object", "null"],
+      "required": ["principal_id", "principal_type"],
+      "properties": {
+        "principal_id": { "type": "string" },
+        "principal_type": {
+          "type": "string",
+          "const": "human",
+          "description": "An agent can never be the approver of any action class."
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "pending_approval", "approved", "denied", "expired", "executed", "verified", "rolled_back"]
+    },
+    "policy_basis": {
+      "type": ["string", "null"],
+      "description": "For A3 requests auto-eligible for L3 execution: the specific tenant policy that pre-authorizes this exact action type. Required whenever status moves toward 'approved' without a human approver for an A3 request; never applicable to A4."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Approved-but-unexecuted requests expire per tenant policy rather than remaining executable indefinitely."
+    },
+    "dry_run": {
+      "type": "boolean",
+      "default": true,
+      "description": "All example/demo-scope action requests in this skill are dry_run: true."
+    },
+    "verification": {
+      "type": "object",
+      "properties": {
+        "verified_at": { "type": "string", "format": "date-time" },
+        "outcome_confirmed": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "properties": {
+        "reversible": { "type": "boolean" },
+        "rolled_back_at": { "type": "string", "format": "date-time" },
+        "rolled_back_by": { "type": "string" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "action_class": { "const": "A4" } } },
+      "then": {
+        "if": { "properties": { "status": { "enum": ["approved", "executed", "verified"] } } },
+        "then": { "required": ["approved_by"] }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "expired" } } },
+      "then": { "required": ["expires_at"] }
+    }
+  ]
+}

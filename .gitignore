@@ -1,0 +1,11 @@
+# dependencies / build output (the Next app keeps its own .gitignore too)
+app/node_modules/
+app/.next/
+app/out/
+app/next-env.d.ts
+app/.turbo/
+
+# misc
+.DS_Store
+*.log
+npm-debug.log*

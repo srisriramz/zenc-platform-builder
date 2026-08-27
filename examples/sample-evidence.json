@@ -1,0 +1,17 @@
+{
+  "evidence_id": "evid-demo-0001",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "origin": "manual",
+  "linked_question_id": "q-mfa-privileged",
+  "reference_type": "file",
+  "reference": "seed-fixtures/mfa-policy-export-demo.pdf",
+  "submitted_by": "user-demo-analyst-01",
+  "submitted_at": "2026-07-01T09:15:00Z",
+  "review_state": "approved",
+  "reviewer_id": "user-demo-reviewer-01",
+  "reviewer_comment": "Policy export confirms partial rollout; consistent with selected answer.",
+  "reviewed_at": "2026-07-02T10:00:00Z",
+  "confidence": 0.8,
+  "content_hash": "sha256-demo-0000000000000000000000000000000000000000000000000000000000",
+  "supersedes_evidence_id": null
+}

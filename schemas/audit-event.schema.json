@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/audit-event.schema.json",
+  "title": "Audit Event",
+  "description": "Append-only. Corrections are new entries referencing the original via supersedes_audit_id — never in-place edits.",
+  "type": "object",
+  "required": [
+    "audit_id", "tenant_id", "occurred_at", "actor", "action", "target_type", "target_id"
+  ],
+  "properties": {
+    "audit_id": { "type": "string" },
+    "tenant_id": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "actor": {
+      "type": "object",
+      "required": ["principal_id", "principal_type"],
+      "properties": {
+        "principal_id": { "type": "string" },
+        "principal_type": { "type": "string", "enum": ["human", "agent", "system"] }
+      }
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "approval_granted", "approval_denied", "action_executed",
+        "action_rolled_back", "evidence_added", "evidence_reviewed",
+        "role_changed", "entitlement_changed", "playbook_state_changed",
+        "kill_switch_toggled"
+      ]
+    },
+    "target_type": {
+      "type": "string",
+      "enum": ["action_request", "evidence", "case", "assessment", "playbook", "role", "entitlement", "policy"]
+    },
+    "target_id": { "type": "string" },
+    "detail": { "type": "string" },
+    "supersedes_audit_id": {
+      "type": ["string", "null"],
+      "description": "Set only when this entry is a documented correction of a prior entry."
+    }
+  }
+}

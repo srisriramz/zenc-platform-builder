@@ -1,0 +1,29 @@
+{
+  "assessment_id": "assess-demo-0001",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "template_id": "tmpl-demo-baseline-2026",
+  "template_version": "1.3.0",
+  "status": "under_review",
+  "answers": [
+    {
+      "question_id": "q-mfa-privileged",
+      "selected_option_id": "opt-partial",
+      "evidence_id": "evid-demo-0001"
+    }
+  ],
+  "maturity_score": 0.62,
+  "evidence_confidence_score": 0.80,
+  "zsis": { "value": 58.4, "indicative": true },
+  "roadmap": [
+    {
+      "item_id": "road-demo-0001",
+      "horizon_days": 30,
+      "title": "Extend MFA enforcement to remaining privileged accounts",
+      "description": "Close the partial-enforcement gap identified in q-mfa-privileged.",
+      "linked_gap_ids": ["finding-demo-0001"]
+    }
+  ],
+  "prior_assessment_id": null,
+  "created_at": "2026-07-01T09:00:00Z",
+  "completed_at": null
+}

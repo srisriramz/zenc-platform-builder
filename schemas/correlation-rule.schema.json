@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/correlation-rule.schema.json",
+  "title": "Correlation Rule",
+  "description": "Deterministic detection rule. No LLM decides whether this rule matches. Lifecycle mirrors the SOC playbook lifecycle intentionally.",
+  "type": "object",
+  "required": [
+    "rule_id", "tenant_id", "name", "version", "lifecycle_state", "rule_type",
+    "attack_mapping"
+  ],
+  "properties": {
+    "rule_id": { "type": "string" },
+    "tenant_id": { "type": "string" },
+    "name": { "type": "string" },
+    "version": { "type": "string" },
+    "lifecycle_state": {
+      "type": "string",
+      "enum": ["draft", "test", "peer_review", "approved", "enabled", "disabled", "retired"]
+    },
+    "proposed_by": {
+      "type": "string",
+      "description": "May be an agent (e.g. detection-engineer-agent) or a human. An agent-proposed rule can never itself set lifecycle_state to 'enabled'."
+    },
+    "enabled_by": {
+      "type": "string",
+      "description": "Must be a human principal, never an agent identifier."
+    },
+    "rule_type": {
+      "type": "string",
+      "enum": [
+        "single_event", "sequence", "threshold", "aggregation", "field_join",
+        "entity_join", "time_window", "suppression"
+      ]
+    },
+    "definition": {
+      "type": "object",
+      "description": "Structured rule logic (never raw code/eval/SQL) — shape is rule_type-dependent and defined by the rule builder, not free text."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["informational", "low", "medium", "high", "critical"]
+    },
+    "attack_mapping": {
+      "type": "array",
+      "description": "Canonical technique mapping set at authoring time. Any alert this rule fires inherits this as source_rule_id-linked context, but the alert's own contributing_event_refs are always the real matched events.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["tactic", "technique_id", "technique_name"],
+        "properties": {
+          "tactic": { "type": "string" },
+          "technique_id": { "type": "string" },
+          "technique_name": { "type": "string" },
+          "sub_technique_id": { "type": "string" }
+        }
+      }
+    },
+    "d3fend_mapping": {
+      "type": "array",
+      "description": "Detect-side D3FEND mapping, or use d3fend_unmapped below — never silently omitted.",
+      "items": {
+        "type": "object",
+        "required": ["d3fend_technique_id", "d3fend_technique_name", "category"],
+        "properties": {
+          "d3fend_technique_id": { "type": "string" },
+          "d3fend_technique_name": { "type": "string" },
+          "category": { "type": "string" }
+        }
+      }
+    },
+    "d3fend_unmapped": {
+      "type": "boolean",
+      "description": "Set true only when explicitly reviewed and no meaningful D3FEND detect mapping exists."
+    },
+    "regression_test_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "run_at", "events_evaluated", "expected_matches", "observed_matches",
+          "missed_expected", "unexpected_matches", "rule_health"
+        ],
+        "properties": {
+          "run_at": { "type": "string", "format": "date-time" },
+          "corpus_id": { "type": "string" },
+          "events_evaluated": { "type": "integer" },
+          "expected_matches": { "type": "integer" },
+          "observed_matches": { "type": "integer" },
+          "missed_expected": { "type": "integer" },
+          "unexpected_matches": { "type": "integer" },
+          "noise_indicator": { "type": "number" },
+          "execution_time_ms": { "type": "number" },
+          "rule_health": {
+            "type": "string",
+            "enum": ["healthy", "needs_tuning", "failing"]
+          }
+        }
+      }
+    },
+    "history": {
+      "type": "array",
+      "description": "Lifecycle transitions, retained across disable/retire — history is audit trail, not working state.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from_state": { "type": "string" },
+          "to_state": { "type": "string" },
+          "changed_by": { "type": "string" },
+          "changed_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "lifecycle_state": { "const": "enabled" } } },
+      "then": {
+        "anyOf": [
+          { "required": ["d3fend_mapping"] },
+          { "properties": { "d3fend_unmapped": { "const": true } }, "required": ["d3fend_unmapped"] }
+        ]
+      }
+    }
+  ]
+}

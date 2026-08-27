@@ -1,0 +1,14 @@
+{
+  "finding_id": "finding-demo-0001",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "assessment_id": "assess-demo-0001",
+  "question_id": "q-mfa-privileged",
+  "title": "MFA not enforced for all privileged accounts",
+  "description": "Demo finding derived from a partially-met control question.",
+  "status": "in_treatment",
+  "control_mappings": [
+    { "framework": "demo-framework-v1", "control_id": "AC-02" }
+  ],
+  "linked_risk_id": "risk-demo-0001",
+  "origin": "assessment"
+}

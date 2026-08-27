@@ -1,0 +1,11 @@
+{
+  "audit_id": "audit-demo-0001",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "occurred_at": "2026-08-20T04:45:00Z",
+  "actor": { "principal_id": "user-demo-soc-lead-01", "principal_type": "human" },
+  "action": "approval_granted",
+  "target_type": "action_request",
+  "target_id": "act-demo-0001",
+  "detail": "Approved dry-run host isolation; requester was response-planner-agent, a distinct principal.",
+  "supersedes_audit_id": null
+}

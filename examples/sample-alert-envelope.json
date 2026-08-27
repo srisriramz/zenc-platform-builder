@@ -1,0 +1,32 @@
+{
+  "envelope_id": "env-demo-0001",
+  "schema_version": "1.1",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "source": {
+    "system": "zenc-siem",
+    "connector_id": "conn-demo-edr-01",
+    "health": "healthy"
+  },
+  "source_alert_id": "rule-demo-encoded-powershell-778812",
+  "occurred_at": "2026-08-20T03:14:00Z",
+  "received_at": "2026-08-20T03:14:22Z",
+  "severity": "high",
+  "title": "Suspicious PowerShell execution chain on demo-host-17",
+  "description": "Demo SIEM correlation match: encoded PowerShell command spawned from an Office process on a synthetic host.",
+  "entities": [
+    { "entity_type": "host", "value": "demo-host-17" },
+    { "entity_type": "user", "value": "demo-user-jsmith" }
+  ],
+  "attack_techniques": [
+    {
+      "tactic": "execution",
+      "technique_id": "T1059.001",
+      "technique_name": "PowerShell",
+      "contributing_event_refs": ["nevt-demo-0001", "nevt-demo-0002"],
+      "source_rule_id": "rule-demo-encoded-powershell"
+    }
+  ],
+  "dedupe_key": "zenc-siem:rule-demo-encoded-powershell-778812:2026-08-20T03",
+  "raw_payload_ref": "seed-fixtures/raw/edr-alert-778812.json",
+  "validation_status": "valid"
+}

@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/case.schema.json",
+  "title": "Case",
+  "type": "object",
+  "required": [
+    "case_id", "tenant_id", "status", "linked_alert_ids", "created_at", "owner_id"
+  ],
+  "properties": {
+    "case_id": { "type": "string" },
+    "tenant_id": { "type": "string" },
+    "title": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["new", "triaged", "investigating", "contained", "recovering", "closed", "reopened"]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["informational", "low", "medium", "high", "critical"]
+    },
+    "owner_id": { "type": "string" },
+    "linked_alert_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "task_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "agent_run_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "sla": {
+      "type": "object",
+      "properties": {
+        "due_at": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["on_track", "at_risk", "breached"] }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "closed_at": { "type": "string", "format": "date-time" },
+    "closure": {
+      "type": "object",
+      "properties": {
+        "classification": {
+          "type": "string",
+          "enum": ["true_positive", "false_positive", "benign_true_positive", "duplicate", "suppressed"]
+        },
+        "reason": {
+          "type": "string",
+          "description": "Required in practice when classification is 'suppressed'."
+        },
+        "closed_by": { "type": "string" }
+      }
+    }
+  },
+  "if": {
+    "properties": { "status": { "const": "closed" } }
+  },
+  "then": {
+    "required": ["closed_at", "closure"],
+    "properties": {
+      "closure": {
+        "required": ["classification", "closed_by"]
+      }
+    }
+  }
+}

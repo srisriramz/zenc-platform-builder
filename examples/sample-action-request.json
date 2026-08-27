@@ -1,0 +1,24 @@
+{
+  "action_request_id": "act-demo-0001",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "case_id": "case-demo-0001",
+  "playbook_step_id": "step-02",
+  "action_class": "A3",
+  "action_type": "isolate_host",
+  "requested_by": { "principal_id": "response-planner-agent", "principal_type": "agent" },
+  "approved_by": { "principal_id": "user-demo-soc-lead-01", "principal_type": "human" },
+  "status": "verified",
+  "policy_basis": null,
+  "expires_at": "2026-08-20T05:00:00Z",
+  "dry_run": true,
+  "verification": {
+    "verified_at": "2026-08-20T04:52:00Z",
+    "outcome_confirmed": true,
+    "notes": "Simulated isolation confirmed against synthetic host state; no real network effect (dry-run)."
+  },
+  "rollback": {
+    "reversible": true,
+    "rolled_back_at": "2026-08-20T05:10:00Z",
+    "rolled_back_by": "user-demo-analyst-02"
+  }
+}

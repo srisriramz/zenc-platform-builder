@@ -1,0 +1,24 @@
+{
+  "message_id": "msg-demo-0001",
+  "agent_run_id": "run-demo-0001",
+  "agent_name": "investigation-agent",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "occurred_at": "2026-08-20T03:25:00Z",
+  "prompt_version": "investigation-agent-prompt-v4.2",
+  "tool_version": "log-search-tool-v1.9",
+  "rule_or_playbook_version": "pb-demo-isolate-host-v2.1.0",
+  "input_ref": "case-demo-0001",
+  "tool_calls": [
+    {
+      "tool_name": "log-search",
+      "called_at": "2026-08-20T03:25:05Z",
+      "scope_or_bound": "host=demo-host-17, last 24h, max 5000 events"
+    }
+  ],
+  "claim": "Encoded PowerShell command matches a known initial-access pattern; recommend host isolation pending approval.",
+  "confidence": 0.86,
+  "evidence": [
+    { "evidence_ref": "env-demo-0001", "supports": true, "freshness": "2026-08-20T03:14:00Z" }
+  ],
+  "escalated": false
+}

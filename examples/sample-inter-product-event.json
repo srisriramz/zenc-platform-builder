@@ -1,0 +1,19 @@
+{
+  "event_id": "evt-demo-0001",
+  "event_type": "CaseClosed",
+  "schema_version": "1.0",
+  "occurred_at": "2026-08-20T05:40:00Z",
+  "producer": "zenc-soc",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "correlation_id": "corr-demo-0001",
+  "causation_id": "evt-demo-0000",
+  "idempotency_key": "case-demo-0001-closed-2026-08-20T05:40:00Z",
+  "data_classification": "synthetic_demo",
+  "provenance": "zenc-soc case-management service (demo)",
+  "payload_integrity_hash": "sha256-demo-1111111111111111111111111111111111111111111111111111111111",
+  "payload": {
+    "case_id": "case-demo-0001",
+    "closure_classification": "true_positive",
+    "suggested_assessment_review": true
+  }
+}

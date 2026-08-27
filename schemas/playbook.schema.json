@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/playbook.schema.json",
+  "title": "Playbook",
+  "type": "object",
+  "required": ["playbook_id", "tenant_id", "name", "version", "lifecycle_state", "steps"],
+  "properties": {
+    "playbook_id": { "type": "string" },
+    "tenant_id": { "type": "string" },
+    "name": { "type": "string" },
+    "version": { "type": "string" },
+    "lifecycle_state": {
+      "type": "string",
+      "enum": ["draft", "test", "peer_review", "approved", "enabled", "disabled", "retired"]
+    },
+    "proposed_by": {
+      "type": "string",
+      "description": "May be an agent (e.g. response-planner-agent) or a human. An agent-proposed playbook can never itself set lifecycle_state to 'enabled'."
+    },
+    "enabled_by": {
+      "type": "string",
+      "description": "Must be a human principal, never an agent identifier."
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step_id", "order", "action_class", "description"],
+        "properties": {
+          "step_id": { "type": "string" },
+          "order": { "type": "integer" },
+          "action_class": {
+            "type": "string",
+            "enum": ["A0", "A1", "A2", "A3", "A4"]
+          },
+          "description": { "type": "string" },
+          "action_type": {
+            "type": "string",
+            "description": "e.g. 'isolate_host', 'disable_account', 'block_ip'. Declared up front so approval requirements are known before the playbook runs."
+          },
+          "d3fend_mapping": {
+            "type": "array",
+            "description": "Response-side D3FEND mapping for this step, or an explicit unmapped marker below — never silently omitted.",
+            "items": {
+              "type": "object",
+              "required": ["d3fend_technique_id", "d3fend_technique_name", "category"],
+              "properties": {
+                "d3fend_technique_id": { "type": "string" },
+                "d3fend_technique_name": { "type": "string" },
+                "category": { "type": "string" }
+              }
+            }
+          },
+          "d3fend_unmapped": {
+            "type": "boolean",
+            "description": "Set true only when this step is explicitly reviewed and has no meaningful D3FEND response mapping. Mutually exclusive with a non-empty d3fend_mapping."
+          }
+        }
+      }
+    },
+    "test_results": {
+      "type": "object",
+      "properties": {
+        "run_against_synthetic_case_id": { "type": "string" },
+        "passed": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    },
+    "history": {
+      "type": "array",
+      "description": "Retained across disable/retire — history is audit trail, not working state.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from_state": { "type": "string" },
+          "to_state": { "type": "string" },
+          "changed_by": { "type": "string" },
+          "changed_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

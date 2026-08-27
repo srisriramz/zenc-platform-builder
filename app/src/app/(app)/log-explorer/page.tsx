@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Download, Loader2, RotateCcw, Search, SlidersHorizontal, Star } from "lucide-react";
-import { useLogSearch, useTelemetrySources } from "@/hooks/use-siem";
+import { useEntityRisk, useLogSearch, useTelemetrySources } from "@/hooks/use-siem";
 import { useSession } from "@/store/session";
 import { useScopedStorage } from "@/lib/local-store";
 import { useNavParams } from "@/lib/use-nav";
@@ -96,6 +96,13 @@ function LogExplorerInner() {
   const familyOf = React.useCallback(
     (id: string) => (sources.data ?? []).find((s) => s.telemetry_source_id === id)?.family,
     [sources.data],
+  );
+
+  const entityRisk = useEntityRisk();
+  const riskFor = React.useCallback(
+    (entityType: string, value: string) =>
+      entityRisk.data?.find((r) => r.entity_type === entityType && r.value === value),
+    [entityRisk.data],
   );
 
   const search = useLogSearch(submitted);
@@ -376,11 +383,11 @@ function LogExplorerInner() {
                     Widen the time range or loosen a condition.
                   </NoResultsState>
                 ) : (
-                  <ResultsTable rows={result.rows} familyOf={(id) => familyOf(id)} selectedId={selected?.event_id ?? null} onSelect={setSelected} />
+                  <ResultsTable rows={result.rows} familyOf={(id) => familyOf(id)} selectedId={selected?.event_id ?? null} onSelect={setSelected} riskFor={riskFor} />
                 )}
 
                 {selected && (
-                  <EventDetail event={selected} familyOf={(id) => familyOf(id)} onClose={() => setSelected(null)} onSelectRelated={setSelected} />
+                  <EventDetail event={selected} familyOf={(id) => familyOf(id)} riskFor={riskFor} onClose={() => setSelected(null)} onSelectRelated={setSelected} />
                 )}
               </>
             )}

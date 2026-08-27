@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTelemetrySources, useQuarantineQueue } from "@/hooks/use-siem";
+import { useEntityRisk, useTelemetrySources, useQuarantineQueue } from "@/hooks/use-siem";
 import { useAudit } from "@/hooks/use-platform";
 import { drillHref } from "@/lib/use-nav";
 import { PageHeader } from "@/components/shell/page-header";
 import { StatTile, StatGrid } from "@/components/stat-tile";
 import { ConnectorTable } from "@/components/siem/connector-health";
+import { RiskBadge, trendLabel } from "@/components/siem/entity-risk-badge";
 import { Card, CardContent, CardHeader, CardTitle, Skeleton } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { Timeline, type TimelineItem } from "@/components/ui/timeline";
@@ -25,6 +26,7 @@ export default function SiemDashboardPage() {
   const router = useRouter();
   const sources = useTelemetrySources();
   const quarantine = useQuarantineQueue();
+  const entityRisk = useEntityRisk();
   const audit = useAudit();
 
   if (sources.isError) {
@@ -126,6 +128,45 @@ export default function SiemDashboardPage() {
             <TableSkeleton cols={7} />
           ) : (
             <ConnectorTable sources={rows} onSelect={(s) => router.push(drillHref("/telemetry", { source: s.telemetry_source_id }))} />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader className="flex-row items-center justify-between">
+          <div>
+            <CardTitle>Entities at risk</CardTitle>
+            <p className="text-xs text-muted-foreground">Seeded, indicative — informs triage, never fires an alert.</p>
+          </div>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/entities">All entities</Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {entityRisk.isLoading && <TableSkeleton rows={3} cols={3} />}
+          {entityRisk.data?.length === 0 && (
+            <p className="text-sm text-muted-foreground">No entities above the indicative-risk threshold.</p>
+          )}
+          {entityRisk.data && entityRisk.data.length > 0 && (
+            <ul className="divide-y divide-border">
+              {entityRisk.data.slice(0, 5).map((r) => (
+                <li key={`${r.entity_type}:${r.value}`}>
+                  <Link
+                    href={drillHref("/entities", { entity: `${r.entity_type}:${r.value}` })}
+                    className="flex items-center justify-between gap-3 py-2 text-sm transition-colors hover:text-foreground"
+                  >
+                    <span className="flex items-center gap-2">
+                      <RiskBadge score={r.score} band={r.band} />
+                      <span className="font-mono">{r.value}</span>
+                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{r.entity_type}</span>
+                    </span>
+                    <span className="hidden max-w-xs truncate text-xs text-muted-foreground sm:inline">
+                      {trendLabel(r.trend)} · {r.signals[0]?.label}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           )}
         </CardContent>
       </Card>

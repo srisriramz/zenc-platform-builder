@@ -2,6 +2,8 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
+  fetchEntityRisk,
+  fetchEntityRiskDetail,
   fetchEventLineage,
   fetchQuarantineQueue,
   fetchTelemetrySources,
@@ -48,5 +50,24 @@ export function useEventLineage(eventId: string | null) {
     queryKey: ["event-lineage", ctx?.tenantId, eventId],
     queryFn: () => fetchEventLineage(ctx!, eventId!),
     enabled: !!ctx && !!eventId,
+  });
+}
+
+export function useEntityRisk() {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["entity-risk", ctx?.tenantId],
+    queryFn: () => fetchEntityRisk(ctx!),
+    enabled: !!ctx,
+    staleTime: 60_000,
+  });
+}
+
+export function useEntityRiskDetail(entityType: string | null, value: string | null) {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["entity-risk-detail", ctx?.tenantId, entityType, value],
+    queryFn: () => fetchEntityRiskDetail(ctx!, entityType!, value!),
+    enabled: !!ctx && !!entityType && !!value,
   });
 }

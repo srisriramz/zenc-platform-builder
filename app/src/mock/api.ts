@@ -171,6 +171,28 @@ export async function fetchQuarantineQueue(ctx: SessionContext): Promise<Quarant
 }
 
 // ---------------------------------------------------------------------------
+// SIEM — Entity risk (seeded, indicative UEBA fixture)
+// ---------------------------------------------------------------------------
+
+export async function fetchEntityRisk(ctx: SessionContext) {
+  await gate("entity-risk", 140);
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "siem.view");
+  return getStore().entityRisk.filter((r) => r.tenant_id === ctx.tenantId);
+}
+
+export async function fetchEntityRiskDetail(ctx: SessionContext, entityType: string, value: string) {
+  await gate("entity-risk-detail");
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "siem.view");
+  const risk = getStore().entityRisk.find(
+    (r) => r.tenant_id === ctx.tenantId && r.entity_type === entityType && r.value === value,
+  );
+  if (!risk) throw new AccessError("permission_denied", "No risk record for that entity in this tenant.");
+  return risk;
+}
+
+// ---------------------------------------------------------------------------
 // SIEM — Log Explorer
 // ---------------------------------------------------------------------------
 

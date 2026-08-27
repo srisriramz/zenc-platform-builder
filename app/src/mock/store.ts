@@ -15,6 +15,7 @@ import {
 import { TELEMETRY_SOURCE_CONFIGS } from "@/data/telemetry-sources";
 import { FAMILY_INGESTION_PROFILE, nominalEps } from "@/data/ingestion-profile";
 import { generateEvents } from "@/data/events";
+import { deriveEntityRisk } from "@/data/entity-risk";
 import { ATTACK_TECHNIQUES, ATTACK_TACTICS } from "@/data/frameworks/attack";
 import { D3FEND_TECHNIQUES } from "@/data/frameworks/d3fend";
 
@@ -115,6 +116,8 @@ function seedAudit(): AuditEvent[] {
 function assemble() {
   const { raw, normalized } = generateEvents();
   const telemetrySources = buildTelemetrySources(normalized);
+  const siemTenantIds = [...new Set(telemetrySources.map((s) => s.tenant_id))];
+  const entityRisk = siemTenantIds.flatMap((tid) => deriveEntityRisk(normalized, tid));
   return {
     demoNowIso: DEMO_NOW_ISO,
     partners: PARTNERS,
@@ -126,6 +129,7 @@ function assemble() {
     telemetrySources,
     rawEvents: raw as RawEvent[],
     normalizedEvents: normalized,
+    entityRisk,
     audit: seedAudit(),
     frameworks: {
       attackTactics: ATTACK_TACTICS,

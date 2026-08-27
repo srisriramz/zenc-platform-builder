@@ -1,27 +1,33 @@
 "use client";
 
+import Link from "next/link";
 import { X } from "lucide-react";
-import type { NormalizedEvent } from "@/schemas";
+import type { EntityRisk, NormalizedEvent } from "@/schemas";
 import { useEventLineage } from "@/hooks/use-siem";
+import { drillHref } from "@/lib/use-nav";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { LoadingState, QueryErrorState } from "@/components/states";
 import { Timeline } from "@/components/ui/timeline";
+import { RiskBadge } from "@/components/siem/entity-risk-badge";
 import { formatTimestamp, secondsBetween } from "@/lib/time";
 
 export function EventDetail({
   event,
   familyOf,
+  riskFor,
   onClose,
   onSelectRelated,
 }: {
   event: NormalizedEvent;
   familyOf: (id: string) => string | undefined;
+  riskFor?: (entityType: string, value: string) => EntityRisk | undefined;
   onClose: () => void;
   onSelectRelated: (e: NormalizedEvent) => void;
 }) {
   const lineage = useEventLineage(event.event_id);
+  const entities = event.entities ?? [];
 
   return (
     <div className="rounded-lg border border-border bg-card">
@@ -48,6 +54,29 @@ export function EventDetail({
         <Kv k="Ingestion lag" v={`${secondsBetween(event.occurred_at, event.ingested_at)}s`} />
         <Kv k="Parser / schema version" v={`${event.parser_version ?? "—"}  ·  schema ${event.schema_version ?? "—"}`} mono />
       </div>
+
+      {entities.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-b border-border p-4">
+          {entities.map((x, i) => {
+            const risk = riskFor?.(x.entity_type, x.value);
+            return (
+              <Link
+                key={i}
+                href={
+                  risk
+                    ? drillHref("/entities", { entity: `${x.entity_type}:${x.value}` })
+                    : drillHref("/log-explorer", { q: `entity.${x.entity_type}:${x.value}`, range: "72h" })
+                }
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 font-mono text-[11px] transition-colors hover:bg-accent"
+              >
+                <span className="text-muted-foreground">{x.entity_type}</span>
+                {x.value}
+                {risk && <RiskBadge score={risk.score} band={risk.band} />}
+              </Link>
+            );
+          })}
+        </div>
+      )}
 
       {event.quarantine_reason && (
         <div className="border-b border-border bg-[color-mix(in_oklch,var(--warning)_8%,transparent)] p-4 text-sm text-[var(--warning)]">

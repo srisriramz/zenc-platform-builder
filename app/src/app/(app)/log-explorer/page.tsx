@@ -130,7 +130,7 @@ export default function LogExplorerPage() {
     <>
       <PageHeader
         title="Log Explorer"
-        description="Structured, bounded search over normalized telemetry. The query language never compiles to SQL, shell, eval, or an unsafe regex — a malformed query is rejected with a specific reason."
+        description="Structured, bounded search over a deterministic ~72h sample of normalized telemetry. The query language never compiles to SQL, shell, eval, or an unsafe regex — a malformed query is rejected with a specific reason."
       />
 
       {/* query bar */}

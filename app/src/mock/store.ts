@@ -4,7 +4,7 @@
  * another product's data except through the contract types in `@/schemas`.
  */
 import type { AuditEvent, NormalizedEvent, RawEvent, TelemetrySource } from "@/schemas";
-import { DEMO_NOW_ISO, minus, secondsBetween } from "@/lib/time";
+import { DEMO_NOW_ISO, minus } from "@/lib/time";
 import {
   TENANTS,
   USERS,
@@ -21,23 +21,48 @@ import { D3FEND_TECHNIQUES } from "@/data/frameworks/d3fend";
 export interface ConnectorRuntime extends TelemetrySource {
   connector_label: string;
   health_note?: string;
-  quarantined_24h: number;
-  events_total: number;
+  /** quarantined events IN THE MATERIALISED SAMPLE (what the review queue shows) */
+  quarantined_in_sample: number;
+  /** normalized events for this source in the materialised 72h sample */
+  sample_events: number;
   /** steady-state throughput profile for the simulated-live ingestion view */
   nominal_eps: number;
   avg_event_bytes: number;
 }
 
+/**
+ * The demo distinguishes two things:
+ *  - the STREAM: real-rate ingestion, summarised as 24h totals here and shown
+ *    live on /ingestion (millions of events, GB/day);
+ *  - the SAMPLE: a deterministic ~72h slice materialised into normalized_events
+ *    so the Log Explorer, correlation, and the quarantine review queue are
+ *    reproducible.
+ * 24h counters below are STREAM figures derived from the ingestion profile;
+ * `sample_events` / `quarantined_in_sample` are SAMPLE figures.
+ */
+const HEALTH_24H_FACTOR: Record<string, number> = {
+  healthy: 1,
+  degraded: 0.55,
+  unknown: 0.7,
+  stale: 0.33, // feed stopped ~16h ago → ~8h of the window carried data
+};
+
 function buildTelemetrySources(normalized: NormalizedEvent[]): ConnectorRuntime[] {
-  const dayAgo = minus(DEMO_NOW_ISO, { hours: 24 });
   return TELEMETRY_SOURCE_CONFIGS.map((cfg) => {
     const mine = normalized.filter((e) => e.telemetry_source_id === cfg.telemetry_source_id);
-    const last24 = mine.filter((e) => Date.parse(e.ingested_at) >= Date.parse(dayAgo));
-    const lastEvent = mine.reduce<string | undefined>((acc, e) => {
+    const sampleLastEvent = mine.reduce<string | undefined>((acc, e) => {
       return !acc || Date.parse(e.occurred_at) > Date.parse(acc) ? e.occurred_at : acc;
     }, undefined);
-    const lags = last24.map((e) => secondsBetween(e.occurred_at, e.ingested_at)).filter((n) => n >= 0);
-    const avgLag = lags.length ? lags.reduce((s, n) => s + n, 0) / lags.length : cfg.base_lag_seconds;
+
+    const eps = nominalEps(cfg.family, cfg.volume_weight);
+    const streamed24h = Math.round(eps * 86_400 * HEALTH_24H_FACTOR[cfg.health]);
+    const failures24h = Math.round(streamed24h * 0.001); // ~0.1% fail schema validation on arrival
+
+    const lag =
+      cfg.health === "degraded" ? cfg.base_lag_seconds : Math.round(cfg.base_lag_seconds * (0.7 + (cfg.family.length % 5) / 10));
+    const lastEventAt =
+      cfg.health === "stale" ? sampleLastEvent : minus(DEMO_NOW_ISO, { seconds: lag });
+
     return {
       telemetry_source_id: cfg.telemetry_source_id,
       tenant_id: cfg.tenant_id,
@@ -46,13 +71,13 @@ function buildTelemetrySources(normalized: NormalizedEvent[]): ConnectorRuntime[
       connector_label: cfg.connector_label,
       health: cfg.health,
       health_note: cfg.health_note,
-      last_event_at: lastEvent,
-      ingestion_lag_seconds: Math.round(avgLag * 10) / 10,
-      events_ingested_24h: last24.filter((e) => e.normalization_status === "normalized").length,
-      schema_validation_failures_24h: last24.filter((e) => e.normalization_status === "quarantined").length,
-      quarantined_24h: last24.filter((e) => e.normalization_status === "quarantined").length,
-      events_total: mine.length,
-      nominal_eps: nominalEps(cfg.family, cfg.volume_weight),
+      last_event_at: lastEventAt,
+      ingestion_lag_seconds: lag,
+      events_ingested_24h: streamed24h,
+      schema_validation_failures_24h: failures24h,
+      quarantined_in_sample: mine.filter((e) => e.normalization_status === "quarantined").length,
+      sample_events: mine.filter((e) => e.normalization_status === "normalized").length,
+      nominal_eps: eps,
       avg_event_bytes: FAMILY_INGESTION_PROFILE[cfg.family].avg_event_bytes,
     };
   });

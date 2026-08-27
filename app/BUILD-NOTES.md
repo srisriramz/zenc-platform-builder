@@ -76,12 +76,16 @@ component API, no dependency on the CLI.
 ## M1 — what's in
 
 - **Telemetry**: 6 synthetic source families for Northwind Bank, 4 for
-  Northwind Markets, 0 for Summit Credit Union (SOC-only tenant — proves SIEM
+  Northwind Markets, 0 for Summit Credit Union (SOAR-only tenant — proves SIEM
   can be absent). Health states cover healthy / degraded / stale / unknown.
-- **Deterministic generator** (`data/events.ts`): ~2,400 events over a frozen
-  72h window, each in linked **raw + normalized** form (`raw_payload_ref`
-  lineage). ~2% are **quarantined on arrival** with a format-appropriate
-  reason — visible in a queue, never silently dropped.
+- **Stream vs. sample.** The demo separates two things: the *stream* (real-rate
+  ingestion — millions of events / GB per day, summarised as 24h counters on
+  Telemetry and shown live on `/ingestion`, all from `data/ingestion-profile.ts`),
+  and the *sample* — a deterministic ~72h slice materialised by
+  `data/events.ts` (~2,400 events, linked **raw + normalized** via
+  `raw_payload_ref`, ~2% **quarantined on arrival**) that backs the Log
+  Explorer, the quarantine review queue, and (in M2) correlation. Every screen
+  labels which one it's showing.
 - **Log Explorer** (`app/(app)/log-explorer`):
   - **Safe bounded query parser** (`lib/query/`): tokenizer + recursive
     descent → typed AST → pure evaluator. **Never** `eval`, `new Function`,

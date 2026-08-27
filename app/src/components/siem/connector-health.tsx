@@ -3,6 +3,7 @@
 import type { ConnectorRuntime } from "@/mock/store";
 import { HealthBadge, FamilyLabel } from "@/components/domain-badges";
 import { formatDuration, formatRelative } from "@/lib/time";
+import { formatCount } from "@/lib/format";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export function ConnectorTable({
@@ -21,7 +22,7 @@ export function ConnectorTable({
           <TableHead>Health</TableHead>
           <TableHead className="text-right">Ingest lag</TableHead>
           <TableHead className="text-right">Events / 24h</TableHead>
-          <TableHead className="text-right">Quarantined / 24h</TableHead>
+          <TableHead className="text-right">Failed / 24h</TableHead>
           <TableHead>Last event</TableHead>
         </TableRow>
       </TableHeader>
@@ -39,10 +40,10 @@ export function ConnectorTable({
             <TableCell><FamilyLabel family={s.family} /></TableCell>
             <TableCell><HealthBadge health={s.health} /></TableCell>
             <TableCell className="text-right tabular-nums">{formatDuration(s.ingestion_lag_seconds ?? 0)}</TableCell>
-            <TableCell className="text-right tabular-nums">{(s.events_ingested_24h ?? 0).toLocaleString()}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatCount(s.events_ingested_24h ?? 0)}</TableCell>
             <TableCell className="text-right tabular-nums">
               {s.schema_validation_failures_24h ? (
-                <span className="text-[var(--warning)]">{s.schema_validation_failures_24h}</span>
+                <span className="text-[var(--warning)]">{formatCount(s.schema_validation_failures_24h)}</span>
               ) : (
                 "0"
               )}

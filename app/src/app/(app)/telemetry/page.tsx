@@ -14,6 +14,7 @@ import {
 } from "@/components/states";
 import { HealthBadge, FamilyLabel } from "@/components/domain-badges";
 import { formatTimestamp } from "@/lib/time";
+import { formatCount } from "@/lib/format";
 import type { ConnectorRuntime } from "@/mock/store";
 
 export default function TelemetryPage() {
@@ -34,7 +35,7 @@ export default function TelemetryPage() {
     <>
       <PageHeader
         title="Telemetry & Connectors"
-        description="Synthetic source families: Windows, Linux/syslog, firewall, cloud, identity, email. Malformed events are quarantined on arrival — visible here, never silently dropped."
+        description="Synthetic source families: Windows, Linux/syslog, firewall, cloud, identity, email. 24h counters are stream totals (see Traffic & Ingestion for live rates); the Log Explorer and this quarantine queue work over a deterministic ~72h sample. Malformed events are quarantined on arrival — never silently dropped."
       />
 
       <Tabs defaultValue="connectors">
@@ -73,10 +74,13 @@ export default function TelemetryPage() {
               <CardContent className="grid gap-4 sm:grid-cols-2">
                 <Field label="Family"><FamilyLabel family={selected.family} /></Field>
                 <Field label="Last event">{formatTimestamp(selected.last_event_at)}</Field>
-                <Field label="Avg ingest lag (24h)">{Math.round(selected.ingestion_lag_seconds ?? 0)}s</Field>
-                <Field label="Events ingested (24h)">{(selected.events_ingested_24h ?? 0).toLocaleString()}</Field>
-                <Field label="Schema-validation failures (24h)">{selected.schema_validation_failures_24h ?? 0}</Field>
-                <Field label="Events retained (72h window)">{selected.events_total.toLocaleString()}</Field>
+                <Field label="Ingest lag">{Math.round(selected.ingestion_lag_seconds ?? 0)}s</Field>
+                <Field label="Events ingested (24h, stream)">{formatCount(selected.events_ingested_24h ?? 0)}</Field>
+                <Field label="Schema-validation failures (24h, stream)">{formatCount(selected.schema_validation_failures_24h ?? 0)}</Field>
+                <Field label="Explorable sample (72h)">
+                  {selected.sample_events.toLocaleString()} events
+                  {selected.quarantined_in_sample > 0 ? ` · ${selected.quarantined_in_sample} quarantined` : ""}
+                </Field>
                 {selected.health_note && (
                   <div className="sm:col-span-2 rounded-md border border-[color-mix(in_oklch,var(--warning)_40%,var(--border))] bg-[color-mix(in_oklch,var(--warning)_10%,transparent)] p-3 text-sm text-muted-foreground">
                     <span className="font-medium text-foreground">Health note. </span>

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Timeline, type TimelineItem } from "@/components/ui/timeline";
 import { DegradedSourceState, QueryErrorState, TableSkeleton } from "@/components/states";
 import { formatRelative } from "@/lib/time";
+import { formatCount } from "@/lib/format";
 
 const AUDIT_TONE: Record<string, TimelineItem["tone"]> = {
   entitlement_changed: "primary",
@@ -36,8 +37,9 @@ export default function SiemDashboardPage() {
   const rows = sources.data ?? [];
   const degraded = rows.filter((s) => s.health === "degraded" || s.health === "stale" || s.health === "unknown");
   const events24h = rows.reduce((n, s) => n + (s.events_ingested_24h ?? 0), 0);
-  const quarantined24h = rows.reduce((n, s) => n + (s.schema_validation_failures_24h ?? 0), 0);
+  const failed24h = rows.reduce((n, s) => n + (s.schema_validation_failures_24h ?? 0), 0);
   const worstLag = rows.reduce((m, s) => Math.max(m, s.ingestion_lag_seconds ?? 0), 0);
+  const sampleQuarantined = quarantine.data?.length ?? 0;
 
   return (
     <>
@@ -74,15 +76,20 @@ export default function SiemDashboardPage() {
             />
           </div>
           <div className="anim-rise anim-delay-2">
-            <StatTile label="Events ingested / 24h" value={events24h.toLocaleString()} icon={DatabaseZap} sub={`worst connector lag ${Math.round(worstLag)}s`} />
+            <StatTile
+              label="Events ingested / 24h"
+              value={formatCount(events24h)}
+              icon={DatabaseZap}
+              sub={`stream total · worst lag ${Math.round(worstLag)}s`}
+            />
           </div>
           <div className="anim-rise anim-delay-3">
             <StatTile
-              label="Quarantined / 24h"
-              value={quarantine.data?.length ?? quarantined24h}
-              tone={(quarantine.data?.length ?? quarantined24h) ? "warning" : "success"}
+              label="Failed schema validation / 24h"
+              value={formatCount(failed24h)}
+              tone={failed24h ? "warning" : "success"}
               icon={Activity}
-              sub="schema-validated on arrival — never silently dropped"
+              sub={`quarantined on arrival · ${sampleQuarantined} in the explorable sample`}
             />
           </div>
         </StatGrid>

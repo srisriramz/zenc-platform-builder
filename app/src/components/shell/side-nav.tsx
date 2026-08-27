@@ -32,7 +32,7 @@ export function SideNav({
     return true;
   });
 
-  const sections: NavItem["section"][] = ["SIEM", "SOC", "Platform"];
+  const sections: NavItem["section"][] = ["SIEM", "SOAR", "Platform"];
 
   const body = (
     <>

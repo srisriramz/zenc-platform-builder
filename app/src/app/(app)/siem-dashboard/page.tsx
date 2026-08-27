@@ -43,7 +43,7 @@ export default function SiemDashboardPage() {
     <>
       <PageHeader
         title="SIEM Dashboard"
-        description="Detect-layer health at a glance. ZenC SIEM runs standalone — nothing on this screen depends on ZenC SOC."
+        description="Detect-layer health at a glance. ZenC SIEM runs standalone — nothing on this screen depends on ZenC SOAR."
       >
         <Button asChild variant="outline" size="sm">
           <Link href="/ingestion">Traffic &amp; Ingestion</Link>

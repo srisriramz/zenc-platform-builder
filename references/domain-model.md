@@ -4,6 +4,15 @@ Canonical entity names and relationships. Use these names consistently
 across schemas, UI copy, and code — don't rename an entity mid-build (e.g.
 "Case" vs "Incident") without updating this file first.
 
+## Product naming
+
+The Respond product is **ZenC SOAR** in all UI copy and branding (it houses
+the SOAR / playbook-automation work). Internal identifiers keep the shorter
+`soc` token deliberately, to avoid churning the contract layer: the product
+key is `"soc"`, the entitlement is `has_soc`, the RBAC prefix is `soc.*`, and
+the routes stay `/soc-dashboard` etc. "SOC" is still used as a plain English
+term for the security-operations function (e.g. the "SOC Analyst" role).
+
 ## ZenC SIEM entities
 
 ```

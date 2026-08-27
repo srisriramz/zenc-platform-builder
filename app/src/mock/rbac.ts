@@ -46,7 +46,7 @@ export function assertEntitlement(ctx: SessionContext, entitlement: "has_siem" |
   const tenant = TENANT_MAP[ctx.tenantId];
   if (!tenant) throw new AccessError("tenant_not_found", "Unknown tenant.");
   if (!tenant.entitlements[entitlement]) {
-    const label = entitlement === "has_siem" ? "ZenC SIEM" : entitlement === "has_soc" ? "ZenC SOC" : "ZenC Assessment";
+    const label = entitlement === "has_siem" ? "ZenC SIEM" : entitlement === "has_soc" ? "ZenC SOAR" : "ZenC Assessment";
     throw new AccessError("entitlement_missing", `${tenant.name} is not entitled to ${label}.`);
   }
 }

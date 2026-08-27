@@ -3,8 +3,8 @@ import { entitySchema, isoDateTime, severity } from "./common";
 
 /**
  * Mirrors schemas/alert-envelope.schema.json (schema_version 1.1).
- * Consumed by ZenC SOC at intake. ZenC SIEM is the reference producer, not a
- * special case — SOC logic must never branch on `source.system`.
+ * Consumed by ZenC SOAR at intake. ZenC SIEM is the reference producer, not a
+ * special case — SOAR logic must never branch on `source.system`.
  * Wired end to end in milestone M2 / M4; defined now so producers and the
  * seed layer share one shape.
  */

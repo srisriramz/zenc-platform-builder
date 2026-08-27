@@ -11,7 +11,7 @@ export default function CoveragePage() {
       M5 builds the coverage matrix as a first-class screen over the seeded ATT&amp;CK and D3FEND libraries, staging each
       technique honestly (telemetry available → collected → parsed → activity detected → events correlated →
       investigation ready → response ready) rather than a binary flag, and derives Detection coverage % and Defensive
-      coverage % that feed SOC reporting.
+      coverage % that feed SOAR reporting.
     </RoadmapPage>
   );
 }

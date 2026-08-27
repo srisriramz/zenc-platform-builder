@@ -41,7 +41,7 @@ export default function TenantsPage() {
                     <TableCell className="font-mono text-xs text-muted-foreground">{t.partner_id}</TableCell>
                     <TableCell className="space-x-1">
                       {t.entitlements.has_siem && <Badge variant="primary">SIEM</Badge>}
-                      {t.entitlements.has_soc && <Badge variant="primary">SOC</Badge>}
+                      {t.entitlements.has_soc && <Badge variant="primary">SOAR</Badge>}
                       {t.entitlements.has_assessment && <Badge variant="outline">Assessment</Badge>}
                       {!t.entitlements.has_siem && !t.entitlements.has_soc && <span className="text-muted-foreground">none</span>}
                     </TableCell>

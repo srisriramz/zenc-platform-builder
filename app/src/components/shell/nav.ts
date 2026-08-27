@@ -26,7 +26,7 @@ import type { ProductArea } from "@/store/session";
 export interface NavItem {
   href: string;
   label: string;
-  section: "SIEM" | "SOC" | "Platform";
+  section: "SIEM" | "SOAR" | "Platform";
   product: ProductArea | "platform";
   icon: LucideIcon;
   requires?: "has_siem" | "has_soc";
@@ -44,14 +44,14 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/detections", label: "Detection Engineering", section: "SIEM", product: "siem", icon: ShieldHalf, requires: "has_siem", permission: "rule.view", milestone: "M3" },
   { href: "/coverage", label: "ATT&CK × D3FEND Coverage", section: "SIEM", product: "siem", icon: Boxes, requires: "has_siem", permission: "siem.view", milestone: "M5" },
 
-  // ---- SOC ----
-  { href: "/soc-dashboard", label: "SOC Dashboard", section: "SOC", product: "soc", icon: Gauge, requires: "has_soc", permission: "soc.view", milestone: "M4" },
-  { href: "/alerts", label: "Alert Intake", section: "SOC", product: "soc", icon: Siren, requires: "has_soc", permission: "soc.view", milestone: "M4" },
-  { href: "/cases", label: "Cases", section: "SOC", product: "soc", icon: BriefcaseBusiness, requires: "has_soc", permission: "case.work", milestone: "M4" },
-  { href: "/agents/runs", label: "Agent Runs", section: "SOC", product: "soc", icon: Workflow, requires: "has_soc", permission: "soc.view", milestone: "M4" },
-  { href: "/approvals", label: "Approval Queue", section: "SOC", product: "soc", icon: BadgeCheck, requires: "has_soc", permission: "soc.view", milestone: "M4" },
-  { href: "/playbooks", label: "Playbooks", section: "SOC", product: "soc", icon: ScrollText, requires: "has_soc", permission: "soc.view", milestone: "M4" },
-  { href: "/reporting", label: "SOC Reporting", section: "SOC", product: "soc", icon: Activity, requires: "has_soc", permission: "soc.view", milestone: "M5" },
+  // ---- SOAR (Respond product; internal key stays "soc") ----
+  { href: "/soc-dashboard", label: "SOAR Dashboard", section: "SOAR", product: "soc", icon: Gauge, requires: "has_soc", permission: "soc.view", milestone: "M4" },
+  { href: "/alerts", label: "Alert Intake", section: "SOAR", product: "soc", icon: Siren, requires: "has_soc", permission: "soc.view", milestone: "M4" },
+  { href: "/cases", label: "Cases", section: "SOAR", product: "soc", icon: BriefcaseBusiness, requires: "has_soc", permission: "case.work", milestone: "M4" },
+  { href: "/agents/runs", label: "Agent Runs", section: "SOAR", product: "soc", icon: Workflow, requires: "has_soc", permission: "soc.view", milestone: "M4" },
+  { href: "/approvals", label: "Approval Queue", section: "SOAR", product: "soc", icon: BadgeCheck, requires: "has_soc", permission: "soc.view", milestone: "M4" },
+  { href: "/playbooks", label: "Playbooks", section: "SOAR", product: "soc", icon: ScrollText, requires: "has_soc", permission: "soc.view", milestone: "M4" },
+  { href: "/reporting", label: "SOAR Reporting", section: "SOAR", product: "soc", icon: Activity, requires: "has_soc", permission: "soc.view", milestone: "M5" },
 
   // ---- Platform ----
   { href: "/tenants", label: "Tenants", section: "Platform", product: "platform", icon: Building2, permission: "admin.identity" },

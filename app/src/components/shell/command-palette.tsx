@@ -65,7 +65,7 @@ export function CommandPalette({
     const tenants: Command[] = bootstrap.tenants.map((t) => ({
       id: `tenant:${t.tenant_id}`,
       label: t.name,
-      hint: [t.entitlements.has_siem && "SIEM", t.entitlements.has_soc && "SOC"].filter(Boolean).join(" + "),
+      hint: [t.entitlements.has_siem && "SIEM", t.entitlements.has_soc && "SOAR"].filter(Boolean).join(" + "),
       group: "Tenants" as const,
       icon: Building2,
       run: () => {

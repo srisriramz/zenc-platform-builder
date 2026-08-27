@@ -3,8 +3,8 @@ import { RoadmapPage } from "@/components/shell/roadmap-page";
 export default function SocDashboardPage() {
   return (
     <RoadmapPage
-      title="SOC Dashboard"
-      description="Respond layer. ZenC SOC runs standalone — it consumes the alert-envelope contract, not SIEM's tables."
+      title="SOAR Dashboard"
+      description="Respond layer. ZenC SOAR runs standalone — it consumes the alert-envelope contract, not SIEM's tables."
       milestone="M4"
       requires="has_soc"
     >

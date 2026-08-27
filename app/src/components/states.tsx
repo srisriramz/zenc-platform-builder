@@ -221,7 +221,7 @@ export function QueryErrorState({ error, onRetry }: { error: unknown; onRetry?: 
 export function EntitlementMissingState({ message }: { message?: string }) {
   return (
     <Shell icon={Ban} title="Product not entitled for this tenant" tone="muted">
-      {message ?? "This tenant is not licensed for this product. SIEM and SOC license independently."}
+      {message ?? "This tenant is not licensed for this product. SIEM and SOAR license independently."}
     </Shell>
   );
 }

@@ -4,7 +4,7 @@ import { isoDateTime, severity } from "./common";
 /**
  * Mirrors schemas/correlation-rule.schema.json.
  * Deterministic — no LLM decides whether a rule matches. Lifecycle is
- * identical in shape to the SOC playbook lifecycle by design. A rule reaches
+ * identical in shape to the SOAR playbook lifecycle by design. A rule reaches
  * `enabled` only via a human principal (`enabled_by`), never an agent.
  * Fully exercised in milestone M2 / M3; the shape is fixed here so the
  * detection-coverage staging in M1 can reference it.

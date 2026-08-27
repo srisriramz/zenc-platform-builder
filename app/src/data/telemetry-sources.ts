@@ -8,7 +8,7 @@ import type { TelemetrySourceFamily } from "@/schemas";
  * Telemetry screen and the Log Explorer never disagree.
  *
  * tenant-summit-cu has has_siem:false and therefore no telemetry sources — it
- * proves SOC can run with SIEM entirely absent.
+ * proves ZenC SOAR can run with SIEM entirely absent.
  */
 export interface TelemetrySourceConfig {
   telemetry_source_id: string;

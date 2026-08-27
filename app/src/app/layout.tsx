@@ -9,7 +9,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "ZenC Security Intelligence Platform (Demo)",
-  description: "Interactive demo with mock data — ZenC SIEM & ZenC SOC.",
+  description: "Interactive demo with mock data — ZenC SIEM & ZenC SOAR.",
 };
 
 /**

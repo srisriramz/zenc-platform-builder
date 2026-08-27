@@ -29,7 +29,7 @@ export function RoadmapPage({
     <>
       <PageHeader title={title} description={description} />
       {caps.data && requires && !entitled ? (
-        <EntitlementMissingState message={`This tenant is not entitled to ${requires === "has_siem" ? "ZenC SIEM" : "ZenC SOC"}.`} />
+        <EntitlementMissingState message={`This tenant is not entitled to ${requires === "has_siem" ? "ZenC SIEM" : "ZenC SOAR"}.`} />
       ) : (
         <MilestoneStub milestone={milestone}>{children}</MilestoneStub>
       )}

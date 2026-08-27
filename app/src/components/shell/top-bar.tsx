@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import type { BootstrapData } from "@/mock/api";
 import { ROLES } from "@/data/platform";
-import { useSession, type SimMode } from "@/store/session";
+import { PRODUCT_LABEL, useSession, type SimMode } from "@/store/session";
 import { Button } from "@/components/ui/button";
 import { Badge, Kbd } from "@/components/ui/primitives";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu";
@@ -88,7 +88,7 @@ export function TopBar({
                   product === p ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {p.toUpperCase()}
+                {PRODUCT_LABEL[p]}
               </button>
             );
           })}
@@ -169,7 +169,7 @@ export function TopBar({
                   <div>
                     <div>{t.name}</div>
                     <div className="text-[11px] text-muted-foreground">
-                      {t.sector} · {[t.entitlements.has_siem && "SIEM", t.entitlements.has_soc && "SOC"].filter(Boolean).join(" + ") || "no products"} · {ROLES[t.role].label}
+                      {t.sector} · {[t.entitlements.has_siem && "SIEM", t.entitlements.has_soc && "SOAR"].filter(Boolean).join(" + ") || "no products"} · {ROLES[t.role].label}
                     </div>
                   </div>
                 </MenuItem>

@@ -80,8 +80,8 @@ function seedAudit(): AuditEvent[] {
     detail,
   });
   return [
-    mk(1, "tenant-northwind-bank", "entitlement_changed", "entitlement", "tenant-northwind-bank", "user-sam-admin", "human", "Enabled has_soc for Northwind Bank", 720),
-    mk(2, "tenant-northwind-markets", "entitlement_changed", "entitlement", "tenant-northwind-markets", "user-sam-admin", "human", "Confirmed has_soc:false — SIEM-only tenant", 512),
+    mk(1, "tenant-northwind-bank", "entitlement_changed", "entitlement", "tenant-northwind-bank", "user-sam-admin", "human", "Enabled ZenC SOAR (has_soc) for Northwind Bank", 720),
+    mk(2, "tenant-northwind-markets", "entitlement_changed", "entitlement", "tenant-northwind-markets", "user-sam-admin", "human", "Confirmed ZenC SOAR off (has_soc:false) — SIEM-only tenant", 512),
     mk(3, "tenant-northwind-bank", "role_changed", "role", "user-marcus-senior", "user-sam-admin", "human", "Granted senior_analyst (detection engineering) to Marcus Bell", 300),
     mk(4, "tenant-northwind-bank", "kill_switch_toggled", "policy", "tenant-northwind-bank", "system", "system", "Tenant kill switch verified disarmed on nightly check", 12),
   ];

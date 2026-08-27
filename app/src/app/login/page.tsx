@@ -40,15 +40,15 @@ export default function LoginPage() {
           </span>
           <div>
             <p className="text-base font-semibold tracking-tight">ZenC Security Intelligence Platform</p>
-            <p className="text-xs text-muted-foreground">SIEM · SOC — interactive demo</p>
+            <p className="text-xs text-muted-foreground">SIEM · SOAR — interactive demo</p>
           </div>
         </div>
         <h1 className="max-w-md text-2xl font-semibold leading-snug tracking-tight sm:text-3xl">
-          Detect with the SIEM. Respond with the SOC. One governed platform.
+          Detect with the SIEM. Respond with SOAR. One governed platform.
         </h1>
         <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
           Pick a persona to explore. Each one carries a different role in different tenants, so role-based access,
-          tenant isolation, and independent SIEM / SOC entitlements all behave live.
+          tenant isolation, and independent SIEM / SOAR entitlements all behave live.
         </p>
         <ul className="grid gap-1.5 text-sm text-muted-foreground">
           {[

@@ -13,6 +13,16 @@ import { persist, createJSONStorage } from "zustand/middleware";
  * security evidence — just which demo persona/tenant/theme is selected.
  */
 export type ProductArea = "siem" | "soc";
+
+/**
+ * Display names for the two live products. The Respond product is branded
+ * "ZenC SOAR" in the UI (it houses the SOAR / playbook automation work); the
+ * internal key stays `"soc"` and the entitlement stays `has_soc` to avoid
+ * churning the contract layer. See references/domain-model.md.
+ */
+export const PRODUCT_LABEL: Record<ProductArea, string> = { siem: "SIEM", soc: "SOAR" };
+export const PRODUCT_LABEL_FULL: Record<ProductArea, string> = { siem: "ZenC SIEM", soc: "ZenC SOAR" };
+
 export type ThemePref = "light" | "dark" | "system";
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
 

@@ -4,7 +4,7 @@ export default function CasesPage() {
   return (
     <RoadmapPage
       title="Cases"
-      description="SOC's unit of investigation and response work."
+      description="ZenC SOAR's unit of investigation and response work."
       milestone="M4"
       requires="has_soc"
     >

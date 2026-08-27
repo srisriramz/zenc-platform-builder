@@ -9,7 +9,7 @@ export default function AlertsPage() {
       requires="has_soc"
     >
       M4 implements intake normalization, schema validation with quarantine (never silent drop), deduplication by
-      idempotency key, and grouping of alerts into cases. SOC logic never branches on <code>source.system</code>.
+      idempotency key, and grouping of alerts into cases. SOAR logic never branches on <code>source.system</code>.
     </RoadmapPage>
   );
 }

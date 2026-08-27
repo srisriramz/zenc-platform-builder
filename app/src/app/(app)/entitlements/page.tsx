@@ -22,7 +22,7 @@ export default function EntitlementsPage() {
     <>
       <PageHeader
         title="Entitlements"
-        description="SIEM, SOC, and Assessment license independently per tenant. Each product must work with the others absent. Assessment stays off until Phase 2 is explicitly reactivated."
+        description="SIEM, SOAR, and Assessment license independently per tenant. Each product must work with the others absent. Assessment stays off until Phase 2 is explicitly reactivated."
       />
       <Card>
         <CardContent className="pt-5">
@@ -34,7 +34,7 @@ export default function EntitlementsPage() {
                 <TableRow>
                   <TableHead>Tenant</TableHead>
                   <TableHead>ZenC SIEM</TableHead>
-                  <TableHead>ZenC SOC</TableHead>
+                  <TableHead>ZenC SOAR</TableHead>
                   <TableHead>ZenC Assessment</TableHead>
                 </TableRow>
               </TableHeader>

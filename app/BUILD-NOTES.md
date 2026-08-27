@@ -123,12 +123,32 @@ component API, no dependency on the CLI.
 4. Detection coverage is not yet built (M5); no binary covered/not-covered
    flag has been introduced anywhere.
 
+## Tests
+
+Vitest, pure-function coverage on the load-bearing pieces (74 tests):
+
+- `src/lib/query/parser.test.ts` — the safe query parser: valid grammar,
+  injection/code rejection (`;`, `$(…)`, backticks, `--`, `/* */`, `\x`),
+  allowlist errors, every bound (length, condition count, group depth,
+  wildcard stars), and the linear glob matcher's ReDoS-immunity.
+- `src/lib/query/evaluate.test.ts` — operator semantics, boolean composition,
+  `source.family` resolution, time-window filtering, limit/truncation,
+  time-range caps.
+- `src/mock/rbac.test.ts` — role → permission mapping, `assertCan` /
+  `assertEntitlement` failure codes, separation of duties (no role holds both
+  `rule.propose` and `rule.enable`), auditor is read-only.
+- `src/schemas/schemas.test.ts` — every Zod schema accepts its
+  `examples/sample-*.json` fixture and rejects a broken one; the
+  non-negotiable refinements (no empty `contributing_event_refs`, enabled
+  rule needs D3FEND + `enabled_by`, quarantine needs a reason).
+
 ## Running
 
 ```bash
 cd app
 npm install
-npm run dev      # http://localhost:3000
-npm run build    # production build — passes clean
-npm run lint     # ESLint — passes clean
+npm run dev       # http://localhost:3000
+npm run build     # production build — passes clean
+npm run lint      # ESLint — passes clean
+npm test          # Vitest — 74 tests, passes clean
 ```

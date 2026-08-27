@@ -7,6 +7,11 @@ import { entitySchema, isoDateTime, severity } from "./common";
  * special case — SOAR logic must never branch on `source.system`.
  * Wired end to end in milestone M2 / M4; defined now so producers and the
  * seed layer share one shape.
+ *
+ * CONTRACT FREEZE: schema_version "1.1" is frozen. M2 (SIEM producer) and M4
+ * (SOAR consumer) build against exactly this shape. A change here is a
+ * deliberate version bump with a migration window (see
+ * references/inter-product-contracts.md) — not an ad-hoc edit.
  */
 export const attackTechniqueClaimSchema = z.object({
   tactic: z.string(),

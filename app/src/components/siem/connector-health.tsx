@@ -14,7 +14,7 @@ export function ConnectorTable({
 }) {
   return (
     <Table>
-      <TableHeader>
+      <TableHeader sticky>
         <TableRow>
           <TableHead>Connector</TableHead>
           <TableHead>Family</TableHead>

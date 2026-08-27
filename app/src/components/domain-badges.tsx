@@ -24,9 +24,10 @@ const HEALTH_STYLE: Record<HealthState, { label: string; variant: Parameters<typ
 
 export function HealthBadge({ health, className }: { health: HealthState; className?: string }) {
   const h = HEALTH_STYLE[health];
+  const unsettled = health === "degraded" || health === "stale";
   return (
     <Badge variant={h.variant} className={className}>
-      <span className="size-1.5 rounded-full bg-current" aria-hidden />
+      <span className={cn("size-1.5 rounded-full bg-current", unsettled && "motion-safe:animate-pulse")} aria-hidden />
       {h.label}
     </Badge>
   );

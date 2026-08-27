@@ -56,13 +56,16 @@ export function Dialog({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 sm:pt-[12vh]">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
+      <div className="anim-fade absolute inset-0 bg-black/55 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
-        className={cn("relative z-10 w-full max-w-lg rounded-lg border border-border bg-popover text-popover-foreground shadow-xl", className)}
+        className={cn(
+          "anim-scale-in relative z-10 w-full max-w-lg overflow-hidden rounded-xl border border-border-strong bg-popover text-popover-foreground shadow-xl",
+          className,
+        )}
       >
         {children}
       </div>

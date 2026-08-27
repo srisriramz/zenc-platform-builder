@@ -24,8 +24,8 @@ export function ResultsTable({
   onSelect: (e: NormalizedEvent) => void;
 }) {
   return (
-    <Table>
-      <TableHeader>
+    <Table containerClassName="max-h-[32rem] overflow-y-auto rounded-lg border border-border">
+      <TableHeader sticky>
         <TableRow>
           <TableHead className="w-44">Occurred</TableHead>
           <TableHead className="w-28">Family</TableHead>

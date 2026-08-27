@@ -46,8 +46,8 @@ export function Menu({
         <div
           role="menu"
           className={cn(
-            "absolute z-50 mt-1 min-w-[12rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md",
-            align === "end" ? "right-0" : "left-0",
+            "anim-scale-in absolute z-50 mt-1.5 max-h-[70vh] min-w-[13rem] overflow-y-auto rounded-lg border border-border-strong bg-popover p-1 text-popover-foreground shadow-lg",
+            align === "end" ? "right-0 origin-top-right" : "left-0 origin-top-left",
             className,
           )}
         >

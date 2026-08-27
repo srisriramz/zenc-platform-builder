@@ -106,8 +106,8 @@ export default function TelemetryPage() {
                 </EmptyState>
               )}
               {quarantine.data && quarantine.data.length > 0 && (
-                <Table>
-                  <TableHeader>
+                <Table containerClassName="max-h-[34rem] overflow-y-auto rounded-lg border border-border">
+                  <TableHeader sticky>
                     <TableRow>
                       <TableHead>Event ID</TableHead>
                       <TableHead>Family</TableHead>

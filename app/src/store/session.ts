@@ -41,7 +41,7 @@ export const useSession = create<SessionState>()(
       userId: null,
       tenantId: null,
       product: "siem",
-      theme: "system",
+      theme: "dark",
       sim: "normal",
       sidebarCollapsed: false,
       hydrated: false,

@@ -33,12 +33,20 @@ function Shell({
 }) {
   const toneClass =
     tone === "danger" ? "text-[var(--destructive)]" : tone === "warning" ? "text-[var(--warning)]" : "text-muted-foreground";
+  const ringClass =
+    tone === "danger"
+      ? "bg-[color-mix(in_oklch,var(--destructive)_12%,transparent)]"
+      : tone === "warning"
+        ? "bg-[color-mix(in_oklch,var(--warning)_14%,transparent)]"
+        : "bg-muted";
   return (
     <div
-      className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center"
+      className="anim-fade flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-6 py-14 text-center"
       role="status"
     >
-      <Icon className={cn("size-7", toneClass)} />
+      <span className={cn("grid size-11 place-items-center rounded-full", ringClass)}>
+        <Icon className={cn("size-5", toneClass)} />
+      </span>
       <div className="space-y-1">
         <p className="text-sm font-medium text-foreground">{title}</p>
         {children && <div className="mx-auto max-w-md text-sm text-muted-foreground">{children}</div>}

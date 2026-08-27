@@ -3,8 +3,21 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /* ---------------------------------- Card --------------------------------- */
-export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("rounded-lg border border-border bg-card text-card-foreground shadow-sm", className)} {...props} />;
+export function Card({
+  className,
+  interactive,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & { interactive?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "card-hairline rounded-xl border border-border text-card-foreground shadow-sm transition-[border-color,box-shadow,transform] duration-200",
+        interactive && "hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("flex flex-col gap-1 p-4 sm:p-5", className)} {...props} />;
@@ -96,7 +109,7 @@ Select.displayName = "Select";
 
 /* -------------------------------- Skeleton ------------------------------- */
 export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("animate-pulse rounded-md bg-muted", className)} aria-hidden {...props} />;
+  return <div className={cn("shimmer rounded-md bg-muted/60", className)} aria-hidden {...props} />;
 }
 
 /* --------------------------------- Kbd ---------------------------------- */

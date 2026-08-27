@@ -373,16 +373,12 @@ export default function LogExplorerPage() {
                     this range. Widen the time range or loosen a condition.
                   </NoResultsState>
                 ) : (
-                  <Card>
-                    <CardContent className="pt-4">
-                      <ResultsTable
-                        rows={result.rows}
-                        familyOf={(id) => familyOf(id)}
-                        selectedId={selected?.event_id ?? null}
-                        onSelect={setSelected}
-                      />
-                    </CardContent>
-                  </Card>
+                  <ResultsTable
+                    rows={result.rows}
+                    familyOf={(id) => familyOf(id)}
+                    selectedId={selected?.event_id ?? null}
+                    onSelect={setSelected}
+                  />
                 )}
 
                 {selected && (

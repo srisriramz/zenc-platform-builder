@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { LoadingState, QueryErrorState } from "@/components/states";
+import { Timeline } from "@/components/ui/timeline";
 import { formatTimestamp, secondsBetween } from "@/lib/time";
 
 export function EventDetail({
@@ -87,14 +88,22 @@ export function EventDetail({
           <TabsContent value="lineage">
             {lineage.isLoading && <LoadingState label="Resolving lineage…" />}
             {lineage.data && (
-              <div className="space-y-3 text-sm">
-                <div className="rounded-md border border-border p-3">
-                  <p className="text-xs font-medium text-muted-foreground">Event lineage</p>
-                  <ol className="mt-1 space-y-1 text-xs">
-                    <li>raw event <span className="font-mono">{event.raw_payload_ref}</span></li>
-                    <li>↳ parsed by <span className="font-mono">{event.parser_version ?? "—"}</span></li>
-                    <li>↳ normalized event <span className="font-mono">{event.event_id}</span> ({event.normalization_status})</li>
-                  </ol>
+              <div className="space-y-4 text-sm">
+                <div className="rounded-lg border border-border p-3">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Event lineage</p>
+                  <Timeline
+                    items={[
+                      { id: "raw", tone: "muted", title: "Raw event received", meta: formatTimestamp(event.ingested_at), body: <span className="font-mono">{event.raw_payload_ref}</span> },
+                      { id: "parse", tone: "info", title: "Parsed & normalized", body: <span className="font-mono">{event.parser_version ?? "—"} · schema {event.schema_version ?? "—"}</span> },
+                      {
+                        id: "norm",
+                        tone: event.normalization_status === "quarantined" ? "warning" : "success",
+                        title: `Normalized event (${event.normalization_status})`,
+                        meta: formatTimestamp(event.occurred_at),
+                        body: <span className="font-mono">{event.event_id}</span>,
+                      },
+                    ]}
+                  />
                 </div>
                 <div>
                   <p className="mb-1 text-xs font-medium text-muted-foreground">

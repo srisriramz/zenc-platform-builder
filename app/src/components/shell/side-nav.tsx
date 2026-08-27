@@ -9,7 +9,13 @@ import { useSession } from "@/store/session";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/primitives";
 
-export function SideNav({ bootstrap }: { bootstrap: BootstrapData }) {
+export function SideNav({
+  bootstrap,
+  variant = "desktop",
+}: {
+  bootstrap: BootstrapData;
+  variant?: "desktop" | "mobile";
+}) {
   const pathname = usePathname();
   const tenantId = useSession((s) => s.tenantId);
   const product = useSession((s) => s.product);
@@ -28,16 +34,19 @@ export function SideNav({ bootstrap }: { bootstrap: BootstrapData }) {
 
   const sections: NavItem["section"][] = ["SIEM", "SOC", "Platform"];
 
-  return (
-    <nav className="hidden w-60 shrink-0 border-r border-border px-3 py-6 md:block" aria-label="Primary">
+  const body = (
+    <>
       {sections.map((section) => {
         const items = visible.filter((i) => i.section === section);
         if (items.length === 0) return null;
         return (
-          <div key={section} className="mb-6">
-            <p className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{section}</p>
+          <div key={section} className="mb-5">
+            <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
+              {section}
+            </p>
             <ul className="space-y-0.5">
               {items.map((item) => {
+                const Icon = item.icon;
                 const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
                 return (
                   <li key={item.href}>
@@ -45,13 +54,22 @@ export function SideNav({ bootstrap }: { bootstrap: BootstrapData }) {
                       href={item.href}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
-                        active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                        "group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+                        active
+                          ? "bg-accent font-medium text-foreground"
+                          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                       )}
                     >
-                      <span>{item.label}</span>
+                      <span
+                        className={cn(
+                          "absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary transition-all",
+                          active ? "opacity-100" : "opacity-0 group-hover:opacity-40",
+                        )}
+                      />
+                      <Icon className={cn("size-4 flex-none transition-colors", active ? "text-primary" : "text-muted-foreground/70")} />
+                      <span className="flex-1 truncate">{item.label}</span>
                       {item.milestone && (
-                        <Badge variant="outline" className="px-1 py-0 text-[9px]">
+                        <Badge variant="outline" className="px-1 py-0 text-[9px] font-medium">
                           {item.milestone}
                         </Badge>
                       )}
@@ -63,6 +81,16 @@ export function SideNav({ bootstrap }: { bootstrap: BootstrapData }) {
           </div>
         );
       })}
+    </>
+  );
+
+  if (variant === "mobile") {
+    return <nav className="px-2 py-4" aria-label="Primary">{body}</nav>;
+  }
+
+  return (
+    <nav className="sticky top-[5.75rem] hidden h-[calc(100vh-7rem)] w-60 shrink-0 overflow-y-auto border-r border-border px-3 py-6 lg:block" aria-label="Primary">
+      {body}
     </nav>
   );
 }

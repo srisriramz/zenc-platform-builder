@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Building2,
   ChevronsUpDown,
+  Menu as MenuIcon,
   Monitor,
   Moon,
   Search,
@@ -31,7 +32,15 @@ const SIM_OPTIONS: { value: SimMode; label: string; desc: string }[] = [
   { value: "partial", label: "Partial results", desc: "Only half the rows return" },
 ];
 
-export function TopBar({ bootstrap, onOpenPalette }: { bootstrap: BootstrapData; onOpenPalette: () => void }) {
+export function TopBar({
+  bootstrap,
+  onOpenPalette,
+  onOpenNav,
+}: {
+  bootstrap: BootstrapData;
+  onOpenPalette: () => void;
+  onOpenNav: () => void;
+}) {
   const router = useRouter();
   const { user } = bootstrap;
   const tenantId = useSession((s) => s.tenantId);
@@ -46,70 +55,74 @@ export function TopBar({ bootstrap, onOpenPalette }: { bootstrap: BootstrapData;
 
   const activeTenant = bootstrap.tenants.find((t) => t.tenant_id === tenantId) ?? bootstrap.tenants[0];
   const role = activeTenant ? ROLES[activeTenant.role] : null;
-
-  const killEngaged =
-    bootstrap.globalKillSwitch.engaged || !!activeTenant?.kill_switch.engaged;
-
+  const killEngaged = bootstrap.globalKillSwitch.engaged || !!activeTenant?.kill_switch.engaged;
   const canSiem = !!activeTenant?.entitlements.has_siem;
   const canSoc = !!activeTenant?.entitlements.has_soc;
 
   return (
-    <header className="sticky top-7 z-40 border-b border-border bg-background/95 backdrop-blur">
-      <div className="mx-auto flex h-14 w-full max-w-[1600px] items-center gap-3 px-4 sm:px-6 lg:px-8">
+    <header className="glass sticky top-7 z-40 border-b border-border">
+      <div className="mx-auto flex h-14 w-full max-w-[1640px] items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:px-8">
+        <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation" onClick={onOpenNav}>
+          <MenuIcon className="size-4" />
+        </Button>
+
         <div className="flex items-center gap-2 font-semibold">
-          <ShieldCheck className="size-5 text-primary" />
-          <span className="hidden sm:inline">ZenC</span>
+          <span className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-primary to-[color-mix(in_oklch,var(--primary)_55%,var(--info))] text-primary-foreground shadow-sm">
+            <ShieldCheck className="size-4" />
+          </span>
+          <span className="hidden text-sm tracking-tight sm:inline">ZenC</span>
         </div>
 
         {/* product switcher */}
-        <div className="flex items-center rounded-md border border-border p-0.5 text-xs">
-          <button
-            type="button"
-            onClick={() => setProduct("siem")}
-            disabled={!canSiem}
-            className={cn(
-              "rounded px-2 py-1 font-medium transition-colors disabled:opacity-40",
-              product === "siem" ? "bg-primary text-primary-foreground" : "hover:bg-accent",
-            )}
-          >
-            SIEM
-          </button>
-          <button
-            type="button"
-            onClick={() => setProduct("soc")}
-            disabled={!canSoc}
-            className={cn(
-              "rounded px-2 py-1 font-medium transition-colors disabled:opacity-40",
-              product === "soc" ? "bg-primary text-primary-foreground" : "hover:bg-accent",
-            )}
-          >
-            SOC
-          </button>
+        <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs">
+          {(["siem", "soc"] as const).map((p) => {
+            const disabled = p === "siem" ? !canSiem : !canSoc;
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setProduct(p)}
+                disabled={disabled}
+                className={cn(
+                  "rounded-md px-2.5 py-1 font-semibold tracking-wide transition-colors disabled:opacity-35",
+                  product === p ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {p.toUpperCase()}
+              </button>
+            );
+          })}
         </div>
 
         {/* command palette trigger */}
         <button
           type="button"
           onClick={onOpenPalette}
-          className="group ml-1 hidden h-9 min-w-56 flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm text-muted-foreground hover:bg-accent md:flex"
+          className="group ml-1 hidden h-9 min-w-56 flex-1 items-center gap-2 rounded-lg border border-border bg-card/50 px-3 text-sm text-muted-foreground transition-colors hover:border-border-strong hover:bg-accent md:flex"
         >
           <Search className="size-4" />
-          <span className="flex-1 text-left">Search & commands…</span>
+          <span className="flex-1 text-left">Search &amp; commands…</span>
           <Kbd>⌘K</Kbd>
         </button>
-
         <div className="flex-1 md:hidden" />
+        <Button variant="ghost" size="icon" className="md:hidden" aria-label="Search and commands" onClick={onOpenPalette}>
+          <Search className="size-4" />
+        </Button>
 
-        {/* environment + simulation indicators */}
-        <Badge variant="outline" className="hidden lg:inline-flex">
+        <Badge variant="outline" className="hidden xl:inline-flex">
           <TestTube2 className="size-3" /> Demo env
         </Badge>
 
         <Menu
           align="end"
           trigger={
-            <Button variant={sim === "normal" ? "ghost" : "outline"} size="sm" className={cn(sim !== "normal" && "border-[var(--warning)] text-[var(--warning)]")}>
-              Sim: {SIM_OPTIONS.find((o) => o.value === sim)?.label}
+            <Button
+              variant={sim === "normal" ? "ghost" : "outline"}
+              size="sm"
+              className={cn("hidden sm:inline-flex", sim !== "normal" && "border-[var(--warning)] text-[var(--warning)]")}
+            >
+              <span className={cn("size-1.5 rounded-full", sim === "normal" ? "bg-[var(--success)]" : "bg-[var(--warning)]")} />
+              {SIM_OPTIONS.find((o) => o.value === sim)?.label}
               <ChevronsUpDown className="size-3" />
             </Button>
           }
@@ -118,14 +131,7 @@ export function TopBar({ bootstrap, onOpenPalette }: { bootstrap: BootstrapData;
             <>
               <MenuLabel>Simulate a condition</MenuLabel>
               {SIM_OPTIONS.map((o) => (
-                <MenuItem
-                  key={o.value}
-                  selected={o.value === sim}
-                  onClick={() => {
-                    setSim(o.value);
-                    close();
-                  }}
-                >
+                <MenuItem key={o.value} selected={o.value === sim} onClick={() => { setSim(o.value); close(); }}>
                   <div>
                     <div>{o.label}</div>
                     <div className="text-[11px] text-muted-foreground">{o.desc}</div>
@@ -136,23 +142,21 @@ export function TopBar({ bootstrap, onOpenPalette }: { bootstrap: BootstrapData;
           )}
         </Menu>
 
-        {/* kill switch status — visible in chrome, not buried in settings */}
         <Badge
           variant={killEngaged ? "danger" : "outline"}
-          className="hidden sm:inline-flex"
+          className="hidden lg:inline-flex"
           title={killEngaged ? "A kill switch is engaged — action execution is halted for its scope" : "No kill switch engaged"}
         >
           {killEngaged ? <ShieldAlert className="size-3" /> : <ShieldCheck className="size-3" />}
           {killEngaged ? "Kill switch ON" : "Kill switch clear"}
         </Badge>
 
-        {/* tenant switcher */}
         <Menu
           align="end"
           trigger={
             <Button variant="outline" size="sm">
               <Building2 className="size-3.5" />
-              <span className="max-w-[10rem] truncate">{activeTenant?.name ?? "Tenant"}</span>
+              <span className="hidden max-w-[9rem] truncate sm:inline">{activeTenant?.name ?? "Tenant"}</span>
               <ChevronsUpDown className="size-3" />
             </Button>
           }
@@ -161,14 +165,7 @@ export function TopBar({ bootstrap, onOpenPalette }: { bootstrap: BootstrapData;
             <>
               <MenuLabel>Switch tenant</MenuLabel>
               {bootstrap.tenants.map((t) => (
-                <MenuItem
-                  key={t.tenant_id}
-                  selected={t.tenant_id === tenantId}
-                  onClick={() => {
-                    setTenant(t.tenant_id);
-                    close();
-                  }}
-                >
+                <MenuItem key={t.tenant_id} selected={t.tenant_id === tenantId} onClick={() => { setTenant(t.tenant_id); close(); }}>
                   <div>
                     <div>{t.name}</div>
                     <div className="text-[11px] text-muted-foreground">
@@ -181,7 +178,6 @@ export function TopBar({ bootstrap, onOpenPalette }: { bootstrap: BootstrapData;
           )}
         </Menu>
 
-        {/* theme */}
         <Menu
           align="end"
           trigger={
@@ -192,8 +188,10 @@ export function TopBar({ bootstrap, onOpenPalette }: { bootstrap: BootstrapData;
         >
           {(close) => (
             <>
+              <MenuLabel>Appearance</MenuLabel>
               {(["light", "dark", "system"] as const).map((t) => (
                 <MenuItem key={t} selected={theme === t} onClick={() => { setTheme(t); close(); }} className="capitalize">
+                  {t === "light" ? <Sun className="size-3.5" /> : t === "dark" ? <Moon className="size-3.5" /> : <Monitor className="size-3.5" />}
                   {t}
                 </MenuItem>
               ))}
@@ -201,13 +199,12 @@ export function TopBar({ bootstrap, onOpenPalette }: { bootstrap: BootstrapData;
           )}
         </Menu>
 
-        {/* user */}
         <Menu
           align="end"
           trigger={
             <Button variant="ghost" size="sm">
               <UserCircle2 className="size-4" />
-              <span className="hidden max-w-[8rem] truncate md:inline">{user.display_name}</span>
+              <span className="hidden max-w-[8rem] truncate lg:inline">{user.display_name}</span>
             </Button>
           }
         >
@@ -215,19 +212,11 @@ export function TopBar({ bootstrap, onOpenPalette }: { bootstrap: BootstrapData;
             <>
               <MenuLabel>{user.display_name}</MenuLabel>
               <div className="px-2 pb-1 text-[11px] text-muted-foreground">
-                {role?.label} in {activeTenant?.name}
+                {role?.label} · {activeTenant?.name}
               </div>
               <MenuSeparator />
               <MenuItem onClick={() => { close(); router.push("/login"); }}>Switch persona…</MenuItem>
-              <MenuItem
-                onClick={() => {
-                  close();
-                  signOut();
-                  router.replace("/login");
-                }}
-              >
-                Sign out
-              </MenuItem>
+              <MenuItem onClick={() => { close(); signOut(); router.replace("/login"); }}>Sign out</MenuItem>
             </>
           )}
         </Menu>

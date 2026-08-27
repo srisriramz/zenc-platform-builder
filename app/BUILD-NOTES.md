@@ -23,6 +23,28 @@ simulated server state, Zustand for the allowed slices only (session, tenant,
 product, theme, sim, sidebar), Recharts, Zod runtime schemas mirroring
 `../schemas/`.
 
+## Design system
+
+Dark-first enterprise SOC surface, fully theme-aware (dark / light / system).
+- Tokens in `app/globals.css` — one `:root` (light) definition per color,
+  `.dark` re-points the same names. shadcn-compatible names + a severity ramp
+  (`--sev-*`), elevation (`--card` / `--card-elevated` / `--popover`), and a
+  shadow scale keyed to a per-theme shadow color.
+- Primitives: `Card` (hairline top-highlight + optional `interactive` lift),
+  `Badge`, `Button`, `Table` (sticky headers via `<TableHeader sticky>`,
+  scroll container), `Tabs`, `Menu`/`Dialog`/`Sheet` (scale-in / slide-in,
+  focus trap, Esc + backdrop), `Timeline`, `StatTile` + `StatGrid`.
+- Motion: `.anim-rise` / `.anim-fade` / `.anim-scale-in` / `.anim-slide-in-left`
+  + `shimmer` skeletons, all disabled under `prefers-reduced-motion`. Page
+  content re-animates on route change (keyed on pathname).
+- Charts follow the `dataviz` skill: single-series histogram → no legend,
+  4px rounded data-ends on the baseline, recessive grid, per-bar hover
+  tooltip, validated bar-vs-surface contrast. Severity is a status ramp that
+  always ships with a text label + dot, never color alone.
+- Chrome: glass sticky top bar, command palette (⌘K) with grouped results,
+  responsive left nav that collapses into a `Sheet` drawer below `lg`,
+  skip-to-content link, visible focus rings, keyboard nav in menus/palette.
+
 The shadcn CLI in this environment is pre-release and crashes on `init`, so
 the primitives are written directly against the same token names — same
 component API, no dependency on the CLI.

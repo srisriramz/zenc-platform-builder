@@ -12,9 +12,14 @@ export const metadata: Metadata = {
   description: "Interactive demo with mock data — ZenC SIEM & ZenC SOC.",
 };
 
+/**
+ * Dark is the default product surface, so the server renders `dark` on <html>.
+ * The client's ThemeSync (components/providers) reconciles to the viewer's
+ * saved preference (light / system) right after hydration.
+ */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full`} suppressHydrationWarning>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full dark`} suppressHydrationWarning>
       <body className="min-h-full bg-background text-foreground antialiased">
         <Providers>
           <DemoNotice />

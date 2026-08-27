@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { CornerDownLeft, Search } from "lucide-react";
+import { ArrowRight, Building2, CornerDownLeft, FlaskConical, Search } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { BootstrapData } from "@/mock/api";
 import { ROLES } from "@/data/platform";
 import { NAV_ITEMS } from "./nav";
@@ -11,10 +12,14 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input, Kbd } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 
+type Group = "Navigate" | "Tenants" | "Simulation";
+
 interface Command {
   id: string;
   label: string;
   hint?: string;
+  group: Group;
+  icon: LucideIcon;
   run: () => void;
 }
 
@@ -46,8 +51,10 @@ export function CommandPalette({
       return true;
     }).map((i) => ({
       id: `nav:${i.href}`,
-      label: `Go to ${i.label}`,
+      label: i.label,
       hint: i.section + (i.milestone ? ` · ${i.milestone}` : ""),
+      group: "Navigate" as const,
+      icon: i.icon,
       run: () => {
         if (i.product === "siem" || i.product === "soc") setProduct(i.product);
         router.push(i.href);
@@ -57,8 +64,10 @@ export function CommandPalette({
 
     const tenants: Command[] = bootstrap.tenants.map((t) => ({
       id: `tenant:${t.tenant_id}`,
-      label: `Switch tenant → ${t.name}`,
-      hint: "Tenant",
+      label: t.name,
+      hint: [t.entitlements.has_siem && "SIEM", t.entitlements.has_soc && "SOC"].filter(Boolean).join(" + "),
+      group: "Tenants" as const,
+      icon: Building2,
       run: () => {
         setTenant(t.tenant_id);
         onClose();
@@ -76,8 +85,10 @@ export function CommandPalette({
       ] as const
     ).map(([value, label]) => ({
       id: `sim:${value}`,
-      label: `Simulate: ${label}`,
-      hint: "Simulation",
+      label,
+      hint: "Simulate a condition",
+      group: "Simulation" as const,
+      icon: FlaskConical,
       run: () => {
         setSim(value);
         onClose();
@@ -90,12 +101,12 @@ export function CommandPalette({
 
   const filtered = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return commands.slice(0, 8);
-    return commands.filter((c) => c.label.toLowerCase().includes(needle) || c.hint?.toLowerCase().includes(needle)).slice(0, 12);
+    const list = !needle
+      ? commands.filter((c) => c.group === "Navigate").slice(0, 8)
+      : commands.filter((c) => c.label.toLowerCase().includes(needle) || c.hint?.toLowerCase().includes(needle)).slice(0, 14);
+    return list;
   }, [q, commands]);
 
-  // Reset on open, and reset the active row when the query changes — both via
-  // the "adjust state while rendering" pattern rather than an effect.
   const [prevOpen, setPrevOpen] = React.useState(open);
   if (open !== prevOpen) {
     setPrevOpen(open);
@@ -110,6 +121,9 @@ export function CommandPalette({
     setActive(0);
   }
 
+  const groups: Group[] = ["Navigate", "Tenants", "Simulation"];
+  let flatIndex = -1;
+
   return (
     <Dialog open={open} onClose={onClose} labelledBy="cmdk-title" className="max-w-xl">
       <div className="flex items-center gap-2 border-b border-border px-3">
@@ -121,7 +135,7 @@ export function CommandPalette({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search screens, tenants, simulations…"
-          className="h-11 border-0 shadow-none focus-visible:ring-0"
+          className="h-12 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
           onKeyDown={(e) => {
             if (e.key === "ArrowDown") {
               e.preventDefault();
@@ -136,28 +150,42 @@ export function CommandPalette({
           }}
         />
       </div>
-      <ul className="max-h-80 overflow-y-auto p-1">
-        {filtered.length === 0 && <li className="px-3 py-6 text-center text-sm text-muted-foreground">No matches.</li>}
-        {filtered.map((c, i) => (
-          <li key={c.id}>
-            <button
-              type="button"
-              onMouseEnter={() => setActive(i)}
-              onClick={() => c.run()}
-              className={cn(
-                "flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm",
-                i === active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
-              )}
-            >
-              <span>{c.label}</span>
-              <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                {c.hint}
-                {i === active && <CornerDownLeft className="size-3" />}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <div className="max-h-[22rem] overflow-y-auto p-1.5">
+        {filtered.length === 0 && <p className="px-3 py-8 text-center text-sm text-muted-foreground">No matches for “{q}”.</p>}
+        {groups.map((group) => {
+          const rows = filtered.filter((c) => c.group === group);
+          if (rows.length === 0) return null;
+          return (
+            <div key={group} className="mb-1">
+              <p className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">{group}</p>
+              {rows.map((c) => {
+                flatIndex++;
+                const i = flatIndex;
+                const Icon = c.icon;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseEnter={() => setActive(i)}
+                    onClick={() => c.run()}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
+                      i === active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+                    )}
+                  >
+                    <Icon className="size-4 flex-none text-muted-foreground" />
+                    <span className="flex-1 truncate">{c.label}</span>
+                    <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                      {c.hint}
+                      {i === active ? <CornerDownLeft className="size-3" /> : <ArrowRight className="size-3 opacity-0" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
       <div className="flex items-center gap-3 border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd> navigate</span>
         <span className="flex items-center gap-1"><Kbd>↵</Kbd> select</span>

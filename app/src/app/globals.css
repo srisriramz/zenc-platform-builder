@@ -111,6 +111,16 @@
   --shadow-color: 262 65% 2%;
 }
 
+/*
+  Chart palette note (dataviz skill): the accent colours are deliberately
+  bright on the near-black surface to match the brand site, which puts them
+  above the validator's dark-mode lightness band for a *categorical* palette.
+  That check does not bind here — the app has no unlabeled multi-hue series.
+  Every chart is single-series (jade `--primary`), a text-labelled status ramp
+  (`--sev-*`, connector health), or the one two-series detect/respond bar,
+  which uses `--success` + `--info` (they clear the normal-vision separation
+  floor) with a text label on each. Status colours always ship with a label.
+*/
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

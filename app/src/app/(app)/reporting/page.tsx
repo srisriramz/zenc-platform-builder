@@ -106,6 +106,9 @@ export default function ReportingPage() {
           <CardContent className="space-y-1.5 text-sm">
             <Row label="Agent-assisted cases" value={`${r.quality.agent_assisted_cases}/${r.throughput.cases_opened} (${r.quality.agent_assisted_pct}%)`} />
             <Row label="Fully manual" value={r.quality.manual_cases} />
+            {r.quality.agent_runs_reviewed > 0 && (
+              <Row label="Agent acceptance" value={`${r.quality.agent_acceptance_pct}% (${r.quality.agent_runs_reviewed} reviewed)`} />
+            )}
             <div className="mt-1 border-t border-border pt-1.5">
               {r.coverage ? (
                 <>

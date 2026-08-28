@@ -168,7 +168,7 @@ export const PARTNERS: Partner[] = [
   { partner_id: "partner-meridian-mssp", name: "Meridian Managed Security", kill_switch: { scope: "partner", engaged: false } },
 ];
 
-const basePolicy = (): TenantPolicy => ({
+export const basePolicy = (): TenantPolicy => ({
   default_autonomy_level: "L2",
   pre_authorized_action_classes: ["A0", "A1"],
   l3_preauthorized_action_types: [],

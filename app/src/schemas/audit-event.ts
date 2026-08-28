@@ -22,6 +22,7 @@ export const auditAction = z.enum([
   "action_requested",
   "action_verified",
   "action_expired",
+  "policy_changed",
 ]);
 
 export const auditTargetType = z.enum([

@@ -1,8 +1,11 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/store/session";
 import {
+  addTelemetrySource,
+  createTenant,
+  createUser,
   fetchAdminTenants,
   fetchAdminUsers,
   fetchAudit,
@@ -11,8 +14,13 @@ import {
   fetchFrameworks,
   fetchPolicies,
   fetchSessionCapabilities,
+  updateTenantPolicy,
+  type AddTelemetrySourceInput,
+  type CreateTenantInput,
+  type CreateUserInput,
 } from "@/mock/api";
 import type { SessionContext } from "@/mock/rbac";
+import type { TenantPolicy } from "@/data/platform";
 
 export function useSessionContext(): SessionContext | null {
   const userId = useSession((s) => s.userId);
@@ -65,6 +73,43 @@ export function useAdminUsers() {
 export function usePolicies() {
   const ctx = useSessionContext();
   return useQuery({ queryKey: ["policies", ctx?.userId, ctx?.tenantId], queryFn: () => fetchPolicies(ctx!), enabled: !!ctx });
+}
+
+export function useUpdateTenantPolicy() {
+  const ctx = useSessionContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, patch }: { tenantId: string; patch: Partial<Pick<TenantPolicy, "default_autonomy_level" | "pre_authorized_action_classes">> }) =>
+      updateTenantPolicy(ctx!, tenantId, patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["policies"] }),
+  });
+}
+
+export function useCreateTenant() {
+  const ctx = useSessionContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateTenantInput) => createTenant(ctx!, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-tenants"] }),
+  });
+}
+
+export function useCreateUser() {
+  const ctx = useSessionContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateUserInput) => createUser(ctx!, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
+}
+
+export function useAddTelemetrySource() {
+  const ctx = useSessionContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AddTelemetrySourceInput) => addTelemetrySource(ctx!, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["telemetry-sources"] }),
+  });
 }
 
 export function useDetectionAnalytics() {

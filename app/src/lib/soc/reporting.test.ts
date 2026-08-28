@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type { AlertEnvelope, Case } from "@/schemas";
+import type { AgentRun, AlertEnvelope, Case } from "@/schemas";
 import { buildSocReport, draftReportNarrative, type SocReportInputs } from "./reporting";
+
+function run(over: Partial<AgentRun>): AgentRun {
+  return {
+    agent_run_id: "run-1",
+    tenant_id: "t1",
+    case_id: "closed-1",
+    started_at: "2026-08-28T08:00:00.000Z",
+    message_ids: [],
+    total_tool_calls: 1,
+    elapsed_seconds: 5,
+    human_touchpoints: [],
+    outcome: "completed",
+    analyst_feedback: null,
+    ...over,
+  } as AgentRun;
+}
 
 function c(over: Partial<Case>): Case {
   return {
@@ -52,6 +68,7 @@ function inputs(over: Partial<SocReportInputs> = {}): SocReportInputs {
     intakeAcceptedCount: 8,
     stageSamples: { collection: [30, 40], siem_detection: [120], handoff: [0] },
     agentAssistedCaseIds: new Set(["closed-1"]),
+    agentRuns: over.agentRuns ?? [],
     coverage: { detection_pct: 32, response_pct: 20, techniques_in_scope: 25 },
     ...over,
   };
@@ -78,6 +95,23 @@ describe("buildSocReport", () => {
     expect(r.quality.agent_assisted_cases).toBe(1);
     expect(r.quality.agent_assisted_pct).toBe(50);
     expect(r.quality.sla_compliance_pct).toBe(100); // open on_track + closed before due_at
+  });
+
+  it("computes agent acceptance rate only over reviewed runs, distinct from agent-assisted %", () => {
+    const runs = [
+      run({ agent_run_id: "run-a", analyst_feedback: { human_determination: "held up", acceptance: "accepted" } }),
+      run({ agent_run_id: "run-b", analyst_feedback: { human_determination: "needed a tweak", acceptance: "modified" } }),
+      run({ agent_run_id: "run-c", analyst_feedback: null }), // not yet reviewed — excluded from the denominator
+    ];
+    const r = buildSocReport(inputs({ agentRuns: runs }));
+    expect(r.quality.agent_runs_reviewed).toBe(2);
+    expect(r.quality.agent_acceptance_pct).toBe(50);
+  });
+
+  it("agent acceptance rate is 0 (not NaN) when no runs have been reviewed yet", () => {
+    const r = buildSocReport(inputs({ agentRuns: [run({ analyst_feedback: null })] }));
+    expect(r.quality.agent_runs_reviewed).toBe(0);
+    expect(r.quality.agent_acceptance_pct).toBe(0);
   });
 
   it("counts a case closed after its SLA due_at as non-compliant", () => {

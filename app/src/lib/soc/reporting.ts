@@ -5,7 +5,7 @@
  * risk/control scoring. Detection / defensive coverage % are NOT recomputed
  * here — they come from the SIEM coverage matrix and are passed in.
  */
-import type { AlertEnvelope, Case } from "@/schemas";
+import type { AgentRun, AlertEnvelope, Case } from "@/schemas";
 import { secondsBetween } from "@/lib/time";
 
 export interface PipelineStage {
@@ -35,6 +35,13 @@ export interface SocReport {
     agent_assisted_cases: number;
     manual_cases: number;
     agent_assisted_pct: number;
+    /**
+     * % of reviewed agent runs a human accepted as-is — distinct from
+     * `agent_assisted_pct`, which only measures whether an agent touched a
+     * case at all, not whether its recommendation held up under review.
+     */
+    agent_acceptance_pct: number;
+    agent_runs_reviewed: number;
     sla_compliance_pct: number;
     sla_breached: number;
   };
@@ -57,6 +64,8 @@ export interface SocReportInputs {
   stageSamples: { collection: number[]; siem_detection: number[]; handoff: number[] };
   /** cases that had at least one non-triage agent run */
   agentAssistedCaseIds: Set<string>;
+  /** every tenant-scoped agent run, for the acceptance-rate KPI */
+  agentRuns: AgentRun[];
   coverage: { detection_pct: number; response_pct: number; techniques_in_scope: number } | null;
   windowLabel?: string;
 }
@@ -113,6 +122,10 @@ export function buildSocReport(input: SocReportInputs): SocReport {
     }
   }
 
+  // agent acceptance — of runs a human actually reviewed, how many did they accept as-is?
+  const reviewedRuns = input.agentRuns.filter((r) => r.analyst_feedback?.acceptance);
+  const acceptedRuns = reviewedRuns.filter((r) => r.analyst_feedback!.acceptance === "accepted");
+
   // workload
   const workload = new Map<string, number>();
   for (const c of open) workload.set(c.owner_id, (workload.get(c.owner_id) ?? 0) + 1);
@@ -142,6 +155,8 @@ export function buildSocReport(input: SocReportInputs): SocReport {
       agent_assisted_cases: agentAssisted,
       manual_cases: input.cases.length - agentAssisted,
       agent_assisted_pct: pct(agentAssisted, input.cases.length),
+      agent_acceptance_pct: pct(acceptedRuns.length, reviewedRuns.length),
+      agent_runs_reviewed: reviewedRuns.length,
       sla_compliance_pct: pct(slaOk, slaOk + slaBreached),
       sla_breached: slaBreached,
     },
@@ -183,6 +198,9 @@ export function draftReportNarrative(report: SocReport, nameOf: (id: string) => 
   );
   lines.push(
     `Agent-assisted resolution on ${r.quality.agent_assisted_pct}% of cases (${r.quality.agent_assisted_cases}/${r.throughput.cases_opened}). ` +
+      (r.quality.agent_runs_reviewed
+        ? `Of ${r.quality.agent_runs_reviewed} agent run(s) a human reviewed, ${r.quality.agent_acceptance_pct}% were accepted as-is. `
+        : "") +
       `SLA compliance ${r.quality.sla_compliance_pct}%${r.quality.sla_breached ? ` — ${r.quality.sla_breached} breached` : ""}.`,
   );
   if (r.coverage) {

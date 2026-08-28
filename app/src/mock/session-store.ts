@@ -24,6 +24,8 @@ import { agentMessageSchema, agentRunSchema } from "@/schemas";
 import type { SeededRule } from "@/data/correlation-rules";
 import type { SeededPlaybook } from "@/data/playbooks";
 import type { ResponsePlan } from "@/lib/soc/response-planner";
+import type { Tenant, TenantPolicy, User } from "@/data/platform";
+import type { ConnectorRuntime } from "./store";
 
 export interface RuleOverride {
   lifecycle_state?: RuleLifecycleState;
@@ -98,6 +100,8 @@ interface SessionState {
   actionRequestOverrides: Map<string, Partial<ActionRequest>>;
   /** kill-switch state overlay: "global" | `partner:<id>` | `tenant:<id>` */
   killSwitchOverrides: Map<string, KillSwitchOverride>;
+  /** per-tenant policy field edits (autonomy level, pre-authorized action classes), keyed by tenant_id */
+  tenantPolicyOverrides: Map<string, Partial<TenantPolicy>>;
   /** cases created during the demo by confirming an intake candidate */
   openedCases: Case[];
   /** mutations to seeded or opened cases (status, owner, closure) */
@@ -112,6 +116,10 @@ interface SessionState {
   addedTasks: Task[];
   /** mutations to seeded or added tasks, keyed by task_id */
   taskOverrides: Map<string, TaskOverride>;
+  /** tenants/users/telemetry sources created via the onboarding wizard this session */
+  addedTenants: Tenant[];
+  addedUsers: User[];
+  addedTelemetrySources: ConnectorRuntime[];
 }
 
 let _state: SessionState = fresh();
@@ -138,6 +146,10 @@ function fresh(): SessionState {
     actionRequests: [],
     actionRequestOverrides: new Map(),
     killSwitchOverrides: new Map(),
+    tenantPolicyOverrides: new Map(),
+    addedTenants: [],
+    addedUsers: [],
+    addedTelemetrySources: [],
   };
 }
 
@@ -261,4 +273,23 @@ export function upsertActionRequestOverride(id: string, patch: Partial<ActionReq
 
 export function setKillSwitchOverride(key: string, patch: KillSwitchOverride): void {
   _state.killSwitchOverrides.set(key, patch);
+}
+
+export function upsertTenantPolicyOverride(tenantId: string, patch: Partial<TenantPolicy>): void {
+  const prev = _state.tenantPolicyOverrides.get(tenantId) ?? {};
+  _state.tenantPolicyOverrides.set(tenantId, { ...prev, ...patch });
+}
+
+// ---- Onboarding wizard: tenants, users, telemetry sources ---------------
+
+export function addTenant(t: Tenant): void {
+  _state.addedTenants.push(t);
+}
+
+export function addUser(u: User): void {
+  _state.addedUsers.push(u);
+}
+
+export function addTelemetrySourceToSession(s: ConnectorRuntime): void {
+  _state.addedTelemetrySources.push(s);
 }

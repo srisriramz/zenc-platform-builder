@@ -17,8 +17,20 @@ follow `templates/claude-code-bootstrap.md`.
 | **M4c** | SOAR response — playbooks, Response Planner, approval queue, dry-run executor, kill switches, Supervisor + QA/Governance | ✅ done |
 | **M5** | ATT&CK × D3FEND coverage matrix (`/coverage`) + SOC reporting (`/reporting`, Reporting Agent) + role-aware analytics presets | ✅ done |
 | **Hardening** | Agent-safety + security review passes, guided-demo controller, persona sweep, nav/palette audit | ✅ done |
+| **Self-service** | Onboarding wizard (`/onboarding`: create tenant → invite user → add + validate a data source), editable per-tenant autonomy level + pre-authorized action classes on `/policies`, agent-acceptance-rate KPI on `/reporting` | ✅ done |
 
 Phase 2 (ZenC Assessment) stays dormant — not built.
+
+**Wizard-created tenants/users are first-class**, not cosmetic seed dressing —
+`mock/rbac.ts`'s `resolveUser`/`resolveTenant` check the session overlay
+(`mock/session-store.ts`'s `addedTenants`/`addedUsers`) alongside the static
+`USER_MAP`/`TENANT_MAP`, so a user created via the wizard can immediately log
+in (the login persona picker itself reads the same merged list via
+`listLoginUsers()`/`listLoginTenantNames()` in `mock/api.ts`) and use every
+RBAC/entitlement-gated screen in their new tenant. Like the rest of the mock
+backend, this state lives in an in-memory module singleton and resets on a
+hard page reload — client-side navigation preserves it, a browser refresh
+does not (this is the existing, documented demo-reset behavior, not new).
 
 ## Stack
 

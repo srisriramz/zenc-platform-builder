@@ -22,6 +22,7 @@ export default function AgentRunPage() {
   const feedbackMut = useRecordFeedback();
   const [determination, setDetermination] = React.useState("");
   const [mapsTo, setMapsTo] = React.useState<AnalystFeedback["maps_to_closure_classification"] | "">("");
+  const [acceptance, setAcceptance] = React.useState<NonNullable<AnalystFeedback["acceptance"]> | "">("");
 
   if (run.isLoading) return <LoadingState label="Loading agent run…" />;
   if (run.isError || !run.data) return <QueryErrorState error={run.error} onRetry={() => run.refetch()} />;
@@ -215,6 +216,14 @@ export default function AgentRunPage() {
         <CardContent>
           {r.analyst_feedback ? (
             <div className="space-y-1 text-sm">
+              {r.analyst_feedback.acceptance && (
+                <p>
+                  <span className="text-muted-foreground">Acceptance: </span>
+                  <Badge variant={r.analyst_feedback.acceptance === "accepted" ? "success" : r.analyst_feedback.acceptance === "modified" ? "warning" : "danger"}>
+                    {r.analyst_feedback.acceptance}
+                  </Badge>
+                </p>
+              )}
               <p>
                 <span className="text-muted-foreground">Human determination: </span>
                 {r.analyst_feedback.human_determination}
@@ -234,11 +243,12 @@ export default function AgentRunPage() {
               className="space-y-3"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!determination.trim()) return;
+                if (!determination.trim() || !acceptance) return;
                 feedbackMut.mutate({
                   runId: r.agent_run_id,
                   feedback: {
                     human_determination: determination.trim(),
+                    acceptance,
                     maps_to_closure_classification: mapsTo || undefined,
                     implicates_version: rule ? `${rule.rule_id}-v${rule.version}` : undefined,
                     agent_claim_ref: messages[messages.length - 1]?.message_id,
@@ -247,7 +257,16 @@ export default function AgentRunPage() {
               }}
             >
               <div>
-                <Label htmlFor="det">What did you determine instead?</Label>
+                <Label htmlFor="acceptance">Did you accept the agent&rsquo;s recommendation?</Label>
+                <Select id="acceptance" value={acceptance} onChange={(e) => setAcceptance(e.target.value as typeof acceptance)} className="max-w-xs">
+                  <option value="">— choose one —</option>
+                  <option value="accepted">Accepted as-is</option>
+                  <option value="modified">Modified</option>
+                  <option value="rejected">Rejected</option>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="det">What did you determine?</Label>
                 <Input id="det" value={determination} onChange={(e) => setDetermination(e.target.value)} placeholder="e.g. the rule is too noisy — narrowed the time window before enabling" />
               </div>
               <div>
@@ -261,7 +280,7 @@ export default function AgentRunPage() {
                   ))}
                 </Select>
               </div>
-              <Button type="submit" size="sm" disabled={feedbackMut.isPending || !determination.trim()}>
+              <Button type="submit" size="sm" disabled={feedbackMut.isPending || !determination.trim() || !acceptance}>
                 Record feedback
               </Button>
             </form>

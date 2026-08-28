@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useAdminTenants } from "@/hooks/use-platform";
 import { PageHeader } from "@/components/shell/page-header";
 import { Card, CardContent, Badge } from "@/components/ui/primitives";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { QueryErrorState, TableSkeleton } from "@/components/states";
 
@@ -14,7 +16,11 @@ export default function TenantsPage() {
       <PageHeader
         title="Tenants"
         description="Partner- and tenant-scoped isolation. Each tenant's data is separate in the mock store; no query crosses a tenant boundary."
-      />
+      >
+        <Button asChild size="sm">
+          <Link href="/onboarding">New tenant</Link>
+        </Button>
+      </PageHeader>
       <Card>
         <CardContent className="pt-5">
           {tenants.isLoading && <TableSkeleton cols={5} />}

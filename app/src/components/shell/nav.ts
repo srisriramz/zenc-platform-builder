@@ -21,6 +21,7 @@ import {
   SlidersHorizontal,
   Siren,
   Table2,
+  UserPlus,
   Users,
   Waves,
   Waypoints,
@@ -70,6 +71,7 @@ export const NAV_ITEMS: NavItem[] = [
   // ---- Platform ----
   { href: "/demo", label: "Guided Demo", section: "Platform", product: "platform", icon: PlayCircle },
   { href: "/tenants", label: "Tenants", section: "Platform", product: "platform", icon: Building2, permission: "admin.identity" },
+  { href: "/onboarding", label: "Onboarding Wizard", section: "Platform", product: "platform", icon: UserPlus, permission: "admin.identity" },
   { href: "/users", label: "Users & Roles", section: "Platform", product: "platform", icon: Users, permission: "admin.identity" },
   { href: "/entitlements", label: "Entitlements", section: "Platform", product: "platform", icon: KeyRound, permission: "admin.identity" },
   { href: "/policies", label: "Policies & Kill Switches", section: "Platform", product: "platform", icon: SlidersHorizontal, permission: "admin.policy" },

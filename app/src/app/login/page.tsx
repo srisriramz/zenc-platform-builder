@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
-import { USERS, TENANT_MAP, ROLES } from "@/data/platform";
+import { ROLES } from "@/data/platform";
+import { listLoginTenantNames, listLoginUsers } from "@/mock/api";
 import { useSession } from "@/store/session";
 import { ZencMark } from "@/components/brand/zenc-logo";
 import { Card, CardContent, Badge } from "@/components/ui/primitives";
@@ -22,6 +23,9 @@ export default function LoginPage() {
   React.useEffect(() => {
     if (hydrated && useSession.getState().userId) router.replace("/siem-dashboard");
   }, [hydrated, router]);
+
+  const users = listLoginUsers();
+  const tenantNames = listLoginTenantNames();
 
   return (
     <div className="relative mx-auto grid min-h-[calc(100vh-1.75rem)] max-w-6xl gap-10 px-4 py-12 lg:grid-cols-[0.85fr_1fr] lg:items-center lg:py-0">
@@ -66,7 +70,7 @@ export default function LoginPage() {
       </div>
 
       <div className="anim-rise anim-delay-2 grid gap-3 sm:grid-cols-2">
-        {USERS.map((u) => {
+        {users.map((u) => {
           const first = u.roles[0];
           return (
             <Card key={u.user_id} interactive className="flex flex-col">
@@ -78,7 +82,7 @@ export default function LoginPage() {
                 <div className="flex flex-1 flex-wrap content-start gap-1.5">
                   {u.roles.map((r) => (
                     <Badge key={r.tenant_id} variant="outline" className="text-[10px]">
-                      {ROLES[r.role].label} · {TENANT_MAP[r.tenant_id]?.name.replace(" (demo)", "")}
+                      {ROLES[r.role].label} · {(tenantNames[r.tenant_id] ?? r.tenant_id).replace(" (demo)", "")}
                     </Badge>
                   ))}
                 </div>

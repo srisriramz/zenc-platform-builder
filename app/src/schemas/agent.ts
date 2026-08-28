@@ -79,6 +79,8 @@ export const humanTouchpoint = z.object({
 export const analystFeedbackSchema = z.object({
   agent_claim_ref: z.string().optional(),
   human_determination: z.string(),
+  /** did the analyst accept the agent's recommendation as-is, change it, or reject it outright? distinct from `maps_to_closure_classification`, which is about the case, not the agent. */
+  acceptance: z.enum(["accepted", "modified", "rejected"]).optional(),
   maps_to_closure_classification: z
     .enum(["true_positive", "false_positive", "benign_true_positive", "duplicate", "suppressed"])
     .optional(),

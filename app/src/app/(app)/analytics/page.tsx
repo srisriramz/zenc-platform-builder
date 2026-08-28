@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Info } from "lucide-react";
 import { useCapabilities } from "@/hooks/use-platform";
 import { useNavParams } from "@/lib/use-nav";
-import { PageHeader, MilestoneStub } from "@/components/shell/page-header";
+import { PageHeader } from "@/components/shell/page-header";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccessDeniedState, EntitlementMissingState, LoadingState } from "@/components/states";
 import { DetectionAnalytics } from "@/components/analytics/detection-analytics";
+import { ManagerAnalytics } from "@/components/analytics/manager-analytics";
+import { ExecutiveAnalytics } from "@/components/analytics/executive-analytics";
 
 type View = "detection" | "manager" | "executive";
 
@@ -79,49 +80,17 @@ function AnalyticsInner() {
 
         {view === "manager" &&
           (ent?.has_soc ? (
-            <MilestoneStub milestone="M4">
-              <p className="mb-2">
-                The SOC Manager view lands with ZenC SOAR&apos;s case and agent layer. It will show, all read-only:
-              </p>
-              <ul className="list-inside list-disc space-y-1">
-                <li>queue depth and ageing, open cases per analyst (workload balance)</li>
-                <li>alert → case conversion rate, and the case-closure mix (true / false / benign / duplicate / suppressed)</li>
-                <li>SLA compliance and at-risk / breached cases</li>
-                <li>agent-assisted vs. fully-manual resolution ratio, and agent acceptance</li>
-                <li>detection-engineering throughput (rules proposed / in review / enabled)</li>
-              </ul>
-            </MilestoneStub>
+            <ManagerAnalytics />
           ) : (
             <EntitlementMissingState message="The SOC Manager view needs ZenC SOAR, which this tenant is not entitled to." />
           ))}
 
-        {view === "executive" && (
-          <div className="space-y-4">
-            <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-              <Info className="mt-0.5 size-4 flex-none" />
-              <span>
-                This tenant has{" "}
-                <span className="font-medium text-foreground">
-                  {[ent?.has_siem && "ZenC SIEM", ent?.has_soc && "ZenC SOAR"].filter(Boolean).join(" + ") || "no live products"}
-                </span>
-                . The Executive view degrades to whatever is entitled — an absent product is shown as a gap, never
-                silently omitted.
-              </span>
-            </div>
-            <MilestoneStub milestone="M5">
-              <p className="mb-2">
-                The Executive (CISO) view is the final beat of the guided demo — it ties SIEM and SOAR data together:
-              </p>
-              <ul className="list-inside list-disc space-y-1">
-                <li>ATT&amp;CK detection coverage % and D3FEND defensive coverage % (computed by SIEM, surfaced here)</li>
-                <li>MTTD / MTTR trend, and the stage-by-stage pipeline-latency breakdown behind them</li>
-                <li>open critical incidents and response success rate</li>
-                <li>top adversary techniques seen this period, and SLA compliance</li>
-                <li>the Reporting Agent drafts the narrative from approved KPI aggregates (human sign-off required)</li>
-              </ul>
-            </MilestoneStub>
-          </div>
-        )}
+        {view === "executive" &&
+          (ent?.has_soc ? (
+            <ExecutiveAnalytics />
+          ) : (
+            <EntitlementMissingState message="The Executive view needs ZenC SOAR, which this tenant is not entitled to." />
+          ))}
       </div>
     </>
   );

@@ -40,11 +40,15 @@ export interface SocReport {
   };
   coverage: { detection_pct: number; response_pct: number; techniques_in_scope: number } | null;
   workload: { owner_id: string; open_cases: number }[];
+  /** most-cited ATT&CK techniques across the tenant's alert stream */
+  top_techniques: { technique_id: string; technique_name: string; count: number }[];
 }
 
 export interface SocReportInputs {
   cases: Case[];
   nativeAlerts: AlertEnvelope[];
+  /** every alert the SOC side saw (native + third-party) — for the technique tally */
+  allSocAlerts: AlertEnvelope[];
   /** first linked alert's received_at per case (across native + third-party) */
   receivedAtByCase: Map<string, string>;
   candidateCount: number;
@@ -113,6 +117,16 @@ export function buildSocReport(input: SocReportInputs): SocReport {
   const workload = new Map<string, number>();
   for (const c of open) workload.set(c.owner_id, (workload.get(c.owner_id) ?? 0) + 1);
 
+  // top techniques across the alert stream
+  const techTally = new Map<string, { technique_id: string; technique_name: string; count: number }>();
+  for (const a of input.allSocAlerts) {
+    for (const t of a.attack_techniques ?? []) {
+      const cur = techTally.get(t.technique_id) ?? { technique_id: t.technique_id, technique_name: t.technique_name, count: 0 };
+      cur.count++;
+      techTally.set(t.technique_id, cur);
+    }
+  }
+
   return {
     window_label: input.windowLabel ?? "demo sample",
     totals: { open_cases: open.length, closed_cases: closed.length },
@@ -133,6 +147,7 @@ export function buildSocReport(input: SocReportInputs): SocReport {
     },
     coverage: input.coverage,
     workload: [...workload.entries()].map(([owner_id, open_cases]) => ({ owner_id, open_cases })).sort((a, b) => b.open_cases - a.open_cases),
+    top_techniques: [...techTally.values()].sort((a, b) => b.count - a.count).slice(0, 8),
   };
 }
 

@@ -46,6 +46,7 @@ function inputs(over: Partial<SocReportInputs> = {}): SocReportInputs {
   return {
     cases,
     nativeAlerts: [alert],
+    allSocAlerts: [alert],
     receivedAtByCase: new Map(cases.map((x) => [x.case_id, alert.received_at])),
     candidateCount: 5,
     intakeAcceptedCount: 8,
@@ -96,6 +97,15 @@ describe("buildSocReport", () => {
   it("closure mix comes only from closed cases", () => {
     const r = buildSocReport(inputs());
     expect(r.throughput.closure_mix).toEqual([{ classification: "false_positive", count: 1 }]);
+  });
+
+  it("tallies the most-cited ATT&CK techniques across the alert stream", () => {
+    const a1 = { ...alert, envelope_id: "a1", attack_techniques: [{ tactic: "x", technique_id: "T1110", technique_name: "Brute Force", contributing_event_refs: ["e"] }] };
+    const a2 = { ...alert, envelope_id: "a2", attack_techniques: [{ tactic: "x", technique_id: "T1110", technique_name: "Brute Force", contributing_event_refs: ["e"] }] };
+    const a3 = { ...alert, envelope_id: "a3", attack_techniques: [{ tactic: "x", technique_id: "T1486", technique_name: "Impact", contributing_event_refs: ["e"] }] };
+    const r = buildSocReport(inputs({ allSocAlerts: [a1, a2, a3] }));
+    expect(r.top_techniques[0]).toEqual({ technique_id: "T1110", technique_name: "Brute Force", count: 2 });
+    expect(r.top_techniques).toHaveLength(2);
   });
 
   it("passes coverage through unchanged (SIEM computes it)", () => {

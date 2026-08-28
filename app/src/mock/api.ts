@@ -2644,6 +2644,7 @@ function socReportFor(tenantId: string) {
   return buildSocReport({
     cases,
     nativeAlerts,
+    allSocAlerts: socAlertsFor(tenantId),
     receivedAtByCase,
     candidateCount: candidates.length,
     intakeAcceptedCount: intakeItems.filter((i) => i.disposition === "accepted").length,

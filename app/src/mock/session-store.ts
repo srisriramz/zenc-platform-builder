@@ -84,6 +84,8 @@ interface SessionState {
   proposedRules: SeededRule[];
   agentRuns: AgentRun[];
   agentMessages: AgentMessage[];
+  /** patches to seeded agent runs (e.g. analyst feedback), keyed by agent_run_id */
+  agentRunOverrides: Map<string, Partial<AgentRun>>;
   audit: AuditEvent[];
   /** playbook lifecycle transitions during the demo */
   playbookOverrides: Map<string, PlaybookOverride>;
@@ -121,6 +123,7 @@ function fresh(): SessionState {
     proposedRules: [],
     agentRuns: [],
     agentMessages: [],
+    agentRunOverrides: new Map(),
     audit: [],
     openedCases: [],
     caseOverrides: new Map(),
@@ -178,9 +181,23 @@ export function addAgentRun(run: AgentRun, messages: AgentMessage[]): void {
   _state.agentMessages.push(...validMessages);
 }
 
+/**
+ * Apply a patch to an agent run wherever it lives: session runs are mutated
+ * in place; a seeded run (in the immutable store) gets an override entry that
+ * the read layer merges. Analyst feedback on a seeded run is no longer lost.
+ */
 export function updateAgentRun(runId: string, patch: Partial<AgentRun>): void {
   const i = _state.agentRuns.findIndex((r) => r.agent_run_id === runId);
-  if (i >= 0) _state.agentRuns[i] = { ..._state.agentRuns[i], ...patch };
+  if (i >= 0) {
+    _state.agentRuns[i] = { ..._state.agentRuns[i], ...patch };
+    return;
+  }
+  const prev = _state.agentRunOverrides.get(runId) ?? {};
+  _state.agentRunOverrides.set(runId, { ...prev, ...patch });
+}
+
+export function agentRunOverride(runId: string): Partial<AgentRun> | undefined {
+  return _state.agentRunOverrides.get(runId);
 }
 
 // ---- SOAR: intake decisions + case mutations ----------------------------

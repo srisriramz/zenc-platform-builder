@@ -54,6 +54,20 @@ describe("kill switch freezes the whole response pipeline (fix M3)", () => {
     await expect(api.fetchKillSwitches({ userId: "user-omar-auditor", tenantId: "tenant-northwind-bank" })).resolves.toHaveProperty("switches");
   });
 
+  it("recordAnalystFeedback needs rule.review or case.work, and persists on a seeded run (fix S2)", async () => {
+    const seededRun = getStore().agentActivity.runs.find((r) => r.tenant_id === "tenant-northwind-bank")!;
+    const auditor = { userId: "user-omar-auditor", tenantId: "tenant-northwind-bank" };
+    await expect(
+      api.recordAnalystFeedback(auditor, seededRun.agent_run_id, { human_determination: "nope" }),
+    ).rejects.toThrow(/case.work|permission/i);
+
+    const res = await api.recordAnalystFeedback(analyst, seededRun.agent_run_id, { human_determination: "reclassified as benign" });
+    expect(res.ok).toBe(true);
+    const run = await api.fetchAgentRun(analyst, seededRun.agent_run_id);
+    expect(run.run.analyst_feedback?.human_determination).toBe("reclassified as benign");
+    expect(run.run.human_touchpoints.some((h) => h.action === "corrected")).toBe(true);
+  });
+
   it("neither plan nor request works on a closed case", async () => {
     const closed = getStore().cases.find((c) => c.tenant_id === "tenant-northwind-bank" && c.status === "closed")!;
     await expect(api.planCaseResponse(analyst, closed.case_id)).rejects.toThrow(/closed/i);

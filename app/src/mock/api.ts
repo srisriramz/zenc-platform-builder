@@ -11,6 +11,7 @@ import { getStore } from "./store";
 import {
   addActionRequest,
   addAgentRun,
+  agentRunOverride,
   addEvidence,
   addOpenedCase,
   addProposedRule,
@@ -410,7 +411,9 @@ export async function fetchAgentRuns(ctx: SessionContext) {
   await gate("agent-runs");
   if (!can(ctx, "soc.view") && !can(ctx, "rule.view")) assertCan(ctx, "soc.view");
   const store = getStore();
-  const runs = [...getSession().agentRuns, ...store.agentActivity.runs].filter((r) => r.tenant_id === ctx.tenantId);
+  const runs = [...getSession().agentRuns, ...store.agentActivity.runs]
+    .filter((r) => r.tenant_id === ctx.tenantId)
+    .map((r) => ({ ...r, ...agentRunOverride(r.agent_run_id) }));
   return runs.map((r) => ({
     ...r,
     subject_label:
@@ -424,10 +427,11 @@ export async function fetchAgentRun(ctx: SessionContext, runId: string) {
   await gate("agent-run");
   if (!can(ctx, "soc.view") && !can(ctx, "rule.view")) assertCan(ctx, "soc.view");
   const store = getStore();
-  const run = [...getSession().agentRuns, ...store.agentActivity.runs].find(
+  const found = [...getSession().agentRuns, ...store.agentActivity.runs].find(
     (r) => r.agent_run_id === runId && r.tenant_id === ctx.tenantId,
   );
-  if (!run) throw new AccessError("permission_denied", "No such agent run in this tenant.");
+  if (!found) throw new AccessError("permission_denied", "No such agent run in this tenant.");
+  const run = { ...found, ...agentRunOverride(runId) };
   const messages = [...getSession().agentMessages, ...store.agentActivity.messages]
     .filter((m) => m.agent_run_id === runId)
     .sort((a, b) => Date.parse(a.occurred_at) - Date.parse(b.occurred_at));
@@ -659,11 +663,13 @@ export async function askAgentToProposeRule(ctx: SessionContext, techniqueId: st
 
 export async function recordAnalystFeedback(ctx: SessionContext, runId: string, feedback: AnalystFeedback) {
   await gate("analyst-feedback");
+  if (!can(ctx, "rule.review") && !can(ctx, "case.work")) assertCan(ctx, "case.work");
   const session = getSession();
-  const run =
+  const found =
     session.agentRuns.find((r) => r.agent_run_id === runId) ??
     getStore().agentActivity.runs.find((r) => r.agent_run_id === runId);
-  if (!run || run.tenant_id !== ctx.tenantId) throw new AccessError("permission_denied", "No such run.");
+  if (!found || found.tenant_id !== ctx.tenantId) throw new AccessError("permission_denied", "No such run.");
+  const run = { ...found, ...agentRunOverride(runId) };
   updateAgentRun(runId, {
     analyst_feedback: feedback,
     human_touchpoints: [

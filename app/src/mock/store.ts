@@ -4,7 +4,15 @@
  * another product's data except through the contract types in `@/schemas`.
  */
 import type { AgentMessage, AgentRun, AuditEvent, NormalizedEvent, RawEvent, TelemetrySource } from "@/schemas";
-import { agentMessageSchema, agentRunSchema } from "@/schemas";
+import {
+  actionRequestSchema,
+  agentMessageSchema,
+  agentRunSchema,
+  caseSchema,
+  evidenceSchema,
+  playbookSchema,
+  taskSchema,
+} from "@/schemas";
 import { DEMO_NOW_ISO, minus } from "@/lib/time";
 import {
   TENANTS,
@@ -209,12 +217,19 @@ function assemble() {
   const response = buildResponseLayer(soc.cases, socAlerts, PLAYBOOKS);
   const seededAgents = seedAgentActivity();
 
-  // Every seeded agent output validates against its contract — a malformed
-  // agent run or message never enters the store (schemas/agent.ts).
+  // Every seeded contract object validates against its schema before it enters
+  // the store — a malformed fixture fails loudly at assembly rather than
+  // slipping past the runtime checks that guard the mutation paths
+  // (review-agent-safety.md fix M1/L1).
   const agentRuns = [...seededAgents.runs, ...soc.agentRuns, ...response.runs].map((r) => agentRunSchema.parse(r));
   const agentMessages = [...seededAgents.messages, ...soc.agentMessages, ...response.messages].map((m) =>
     agentMessageSchema.parse(m),
   );
+  soc.cases.forEach((c) => caseSchema.parse(c));
+  soc.evidence.forEach((e) => evidenceSchema.parse(e));
+  soc.tasks.forEach((t) => taskSchema.parse(t));
+  PLAYBOOKS.forEach((p) => playbookSchema.parse(p));
+  response.actionRequests.forEach((r) => actionRequestSchema.parse(r));
 
   return {
     demoNowIso: DEMO_NOW_ISO,

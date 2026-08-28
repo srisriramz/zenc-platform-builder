@@ -1,4 +1,5 @@
 import type { ActionRequest, AgentMessage, AgentRun, AlertEnvelope, Case } from "@/schemas";
+import { actionRequestSchema } from "@/schemas";
 import { minus } from "@/lib/time";
 import { hashString } from "@/lib/prng";
 import { TENANT_MAP } from "@/data/platform";
@@ -124,7 +125,8 @@ export function buildResponseLayer(
     if (isRansomware) {
       const apprAt = minus(reqAt, { minutes: -8 });
       const execAt = minus(apprAt, { minutes: -4 });
-      actionRequests.push({
+      // validated at construction — the no-self-approval / A4 refinements fire here
+      actionRequests.push(actionRequestSchema.parse({
         ...base,
         status: "verified",
         approved_by: { principal_id: APPROVER, principal_type: "human" },
@@ -139,9 +141,9 @@ export function buildResponseLayer(
         },
         verification: { verified_at: execAt, outcome_confirmed: true, notes: "DRY RUN — simulated post-state is consistent with the requested action." },
         rollback: { reversible: base.reversible ?? true },
-      });
+      }));
     } else {
-      actionRequests.push(base);
+      actionRequests.push(actionRequestSchema.parse(base));
     }
   }
 

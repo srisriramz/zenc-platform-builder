@@ -29,13 +29,13 @@ export default function LoginPage() {
         className="pointer-events-none absolute inset-0 -z-10 opacity-70"
         style={{
           background:
-            "radial-gradient(600px circle at 15% 20%, color-mix(in oklch, var(--primary) 16%, transparent), transparent 60%), radial-gradient(500px circle at 85% 80%, color-mix(in oklch, var(--info) 12%, transparent), transparent 55%)",
+            "radial-gradient(600px circle at 15% 20%, color-mix(in oklch, var(--primary) 18%, transparent), transparent 60%), radial-gradient(500px circle at 85% 80%, color-mix(in oklch, var(--gold) 12%, transparent), transparent 55%)",
         }}
       />
 
       <div className="anim-rise space-y-5">
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-primary to-[color-mix(in_oklch,var(--primary)_55%,var(--info))] text-primary-foreground shadow-md">
+          <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-primary to-[color-mix(in_oklch,var(--primary)_60%,var(--gold))] text-primary-foreground shadow-md">
             <ShieldCheck className="size-5" />
           </span>
           <div>

@@ -92,11 +92,13 @@ export function CoverageMatrixTable({
               {g.detected}/{g.rows.length} detected{data.has_soc ? ` · ${g.responded}/${g.rows.length} response` : ""}
             </span>
           </h3>
-          <ul className="overflow-hidden rounded-lg border border-border">
-            {g.rows.map((r) => (
-              <TechniqueRow key={`${g.tactic.tactic_id}:${r.technique_id}`} r={r} hasSoc={data.has_soc} open={open.has(r.technique_id)} onToggle={() => toggle(r.technique_id)} />
-            ))}
-          </ul>
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <ul className="min-w-[34rem]">
+              {g.rows.map((r) => (
+                <TechniqueRow key={`${g.tactic.tactic_id}:${r.technique_id}`} r={r} hasSoc={data.has_soc} open={open.has(r.technique_id)} onToggle={() => toggle(r.technique_id)} />
+              ))}
+            </ul>
+          </div>
         </div>
       ))}
     </div>

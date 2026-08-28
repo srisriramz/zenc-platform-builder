@@ -31,10 +31,18 @@ product, theme, sim, sidebar), Recharts, Zod runtime schemas mirroring
 ## Design system
 
 Dark-first enterprise SOC surface, fully theme-aware (dark / light / system).
+Skinned to match the ZenC Labs brand site (zenclabs): a jade-green accent
+(`#86bc25`) on a near-black, blue-tinted surface with a gold secondary
+accent; **Sora** for display / headings, **Albert Sans** for body,
+**JetBrains Mono** for mono. Dark mode carries the bright brand green with
+dark ink text; light mode uses a deeper grass green so the accent stays
+legible on white.
 - Tokens in `app/globals.css` — one `:root` (light) definition per color,
   `.dark` re-points the same names. shadcn-compatible names + a severity ramp
-  (`--sev-*`), elevation (`--card` / `--card-elevated` / `--popover`), and a
-  shadow scale keyed to a per-theme shadow color.
+  (`--sev-*`), elevation (`--card` / `--card-elevated` / `--popover`), `--gold`,
+  and a shadow scale keyed to a per-theme shadow color.
+- Buttons are pills (`rounded-full`) in the display font; page mastheads use
+  the large Sora scale with tight tracking.
 - Primitives: `Card` (hairline top-highlight + optional `interactive` lift),
   `Badge`, `Button`, `Table` (sticky headers via `<TableHeader sticky>`,
   scroll container), `Tabs`, `Menu`/`Dialog`/`Sheet` (scale-in / slide-in,

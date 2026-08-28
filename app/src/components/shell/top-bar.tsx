@@ -67,10 +67,10 @@ export function TopBar({
         </Button>
 
         <div className="flex items-center gap-2 font-semibold">
-          <span className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-primary to-[color-mix(in_oklch,var(--primary)_55%,var(--info))] text-primary-foreground shadow-sm">
+          <span className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-primary to-[color-mix(in_oklch,var(--primary)_60%,var(--gold))] text-primary-foreground shadow-sm">
             <ShieldCheck className="size-4" />
           </span>
-          <span className="hidden text-sm tracking-tight sm:inline">ZenC</span>
+          <span className="hidden font-display text-sm font-semibold tracking-tight sm:inline">ZenC</span>
         </div>
 
         {/* product switcher */}
@@ -119,7 +119,7 @@ export function TopBar({
             <Button
               variant={sim === "normal" ? "ghost" : "outline"}
               size="sm"
-              className={cn("hidden sm:inline-flex", sim !== "normal" && "border-[var(--warning)] text-[var(--warning)]")}
+              className={cn("hidden md:inline-flex", sim !== "normal" && "border-[var(--warning)] text-[var(--warning)]")}
             >
               <span className={cn("size-1.5 rounded-full", sim === "normal" ? "bg-[var(--success)]" : "bg-[var(--warning)]")} />
               {SIM_OPTIONS.find((o) => o.value === sim)?.label}
@@ -156,7 +156,7 @@ export function TopBar({
           trigger={
             <Button variant="outline" size="sm">
               <Building2 className="size-3.5" />
-              <span className="hidden max-w-[9rem] truncate sm:inline">{activeTenant?.name ?? "Tenant"}</span>
+              <span className="hidden max-w-[9rem] truncate md:inline">{activeTenant?.name ?? "Tenant"}</span>
               <ChevronsUpDown className="size-3" />
             </Button>
           }

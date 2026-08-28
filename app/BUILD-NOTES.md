@@ -62,10 +62,14 @@ component API, no dependency on the CLI.
   partners, per-tenant entitlements (`has_siem`/`has_soc`/`has_assessment`),
   Policy Engine with locked non-negotiable fields, append-only Audit, Feature
   flags via the sim control, Observability via connector health.
-- **RBAC**: 6 roles (analyst, senior analyst, approver, admin, reviewer,
-  auditor); permissions are checked in the mock API, not just hidden in the
-  UI. `rule.enable` / `action.approve` are separate permissions; agents are
-  never modelled as holding them.
+- **RBAC**: 9 roles (analyst, senior analyst, approver, SOC manager, CISO,
+  admin, reviewer, auditor, super admin); permissions are checked in the mock
+  API, not just hidden in the UI. `rule.enable` / `action.approve` are
+  separate permissions; agents are never modelled as holding them.
+  `super_admin` is a documented break-glass exception — it holds every
+  permission (including combinations no operational role may bundle) and
+  bypasses tenant product entitlements, but still cannot self-approve its own
+  action requests since that check is identity-based, not permission-based.
 - **Seeded ATT&CK + D3FEND libraries** as static data
   (`data/frameworks/`) — 24 techniques / 11 tactics, 16 D3FEND techniques.
   The product maps to them; it never edits them.

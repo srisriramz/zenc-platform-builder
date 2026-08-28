@@ -12,7 +12,8 @@ export type RoleId =
   | "ciso"
   | "admin"
   | "reviewer"
-  | "auditor";
+  | "auditor"
+  | "super_admin";
 
 export interface Role {
   id: RoleId;
@@ -91,6 +92,18 @@ export const ROLES: Record<RoleId, Role> = {
     label: "Auditor",
     description: "Read-only access to audit trail and platform state. Cannot change anything.",
     permissions: ["siem.view", "soc.view", "rule.view", "reporting.view", "audit.view"],
+  },
+  super_admin: {
+    id: "super_admin",
+    label: "Super Admin",
+    description:
+      "Break-glass role with unrestricted platform access: every permission across every product, including combinations no operational role is allowed to bundle (e.g. proposing and enabling the same rule, or working case evidence and reviewing it). It also bypasses tenant product entitlements (SIEM/SOAR/Assessment), so it can operate on tenants not licensed for a given product. This is an intentional, documented exception to the platform's separation-of-duties model — meant for emergency platform operations, not day-to-day use. It still cannot approve its own action request: self-approval is blocked by comparing principal identity, not by permission, so no role can bypass it.",
+    permissions: [
+      "siem.view", "siem.query", "siem.export",
+      "rule.view", "rule.propose", "rule.review", "rule.enable",
+      "soc.view", "case.work", "action.request", "action.approve", "evidence.review",
+      "reporting.view", "admin.identity", "admin.policy", "audit.view",
+    ],
   },
 };
 
@@ -198,8 +211,8 @@ export const TENANT_MAP: Record<string, Tenant> = Object.fromEntries(
 export const USERS: User[] = [
   {
     user_id: "user-priya-analyst",
-    display_name: "Priya Nair",
-    email: "priya.nair@demo.zenc.example",
+    display_name: "Sandhya",
+    email: "sandhya@demo.zenc.example",
     roles: [
       { tenant_id: "tenant-northwind-bank", role: "analyst" },
       { tenant_id: "tenant-summit-cu", role: "analyst" },
@@ -207,8 +220,8 @@ export const USERS: User[] = [
   },
   {
     user_id: "user-marcus-senior",
-    display_name: "Marcus Bell",
-    email: "marcus.bell@demo.zenc.example",
+    display_name: "Sivakanth",
+    email: "sivakanth@demo.zenc.example",
     roles: [
       { tenant_id: "tenant-northwind-bank", role: "senior_analyst" },
       { tenant_id: "tenant-northwind-markets", role: "senior_analyst" },
@@ -216,8 +229,8 @@ export const USERS: User[] = [
   },
   {
     user_id: "user-dana-approver",
-    display_name: "Dana Osei",
-    email: "dana.osei@demo.zenc.example",
+    display_name: "Raviteja",
+    email: "raviteja@demo.zenc.example",
     roles: [
       { tenant_id: "tenant-northwind-bank", role: "approver" },
       { tenant_id: "tenant-northwind-markets", role: "approver" },
@@ -226,8 +239,8 @@ export const USERS: User[] = [
   },
   {
     user_id: "user-ravi-manager",
-    display_name: "Ravi Menon",
-    email: "ravi.menon@demo.zenc.example",
+    display_name: "Narasimha",
+    email: "narasimha@demo.zenc.example",
     roles: [
       { tenant_id: "tenant-northwind-bank", role: "soc_manager" },
       { tenant_id: "tenant-summit-cu", role: "soc_manager" },
@@ -235,8 +248,8 @@ export const USERS: User[] = [
   },
   {
     user_id: "user-ava-ciso",
-    display_name: "Ava Chen",
-    email: "ava.chen@demo.zenc.example",
+    display_name: "CISO",
+    email: "ciso@demo.zenc.example",
     roles: [
       { tenant_id: "tenant-northwind-bank", role: "ciso" },
       { tenant_id: "tenant-northwind-markets", role: "ciso" },
@@ -245,8 +258,8 @@ export const USERS: User[] = [
   },
   {
     user_id: "user-sam-admin",
-    display_name: "Sam Whitfield",
-    email: "sam.whitfield@demo.zenc.example",
+    display_name: "Venkat Raju",
+    email: "venkat.raju@demo.zenc.example",
     roles: [
       { tenant_id: "tenant-northwind-bank", role: "admin" },
       { tenant_id: "tenant-northwind-markets", role: "admin" },
@@ -255,18 +268,28 @@ export const USERS: User[] = [
   },
   {
     user_id: "user-lena-reviewer",
-    display_name: "Lena Fischer",
-    email: "lena.fischer@demo.zenc.example",
+    display_name: "Krishna",
+    email: "krishna@demo.zenc.example",
     roles: [{ tenant_id: "tenant-northwind-bank", role: "reviewer" }],
   },
   {
     user_id: "user-omar-auditor",
-    display_name: "Omar Haddad",
-    email: "omar.haddad@demo.zenc.example",
+    display_name: "Suma",
+    email: "suma@demo.zenc.example",
     roles: [
       { tenant_id: "tenant-northwind-bank", role: "auditor" },
       { tenant_id: "tenant-northwind-markets", role: "auditor" },
       { tenant_id: "tenant-summit-cu", role: "auditor" },
+    ],
+  },
+  {
+    user_id: "user-nadia-superadmin",
+    display_name: "Sriram",
+    email: "sriram@demo.zenc.example",
+    roles: [
+      { tenant_id: "tenant-northwind-bank", role: "super_admin" },
+      { tenant_id: "tenant-northwind-markets", role: "super_admin" },
+      { tenant_id: "tenant-summit-cu", role: "super_admin" },
     ],
   },
 ];

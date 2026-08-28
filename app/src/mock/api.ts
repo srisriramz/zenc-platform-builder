@@ -30,7 +30,7 @@ import {
   upsertRuleOverride,
   upsertTaskOverride,
 } from "./session-store";
-import { AccessError, assertCan, assertEntitlement, can, permissionsFor, roleInTenant, type SessionContext } from "./rbac";
+import { AccessError, assertCan, assertEntitlement, can, effectiveEntitlements, permissionsFor, roleInTenant, type SessionContext } from "./rbac";
 import { parseQuery, type ParseError } from "@/lib/query/parser";
 import { runQuery, type EvalContext, type RunQueryError, type RunQueryResult } from "@/lib/query/evaluate";
 import { validateTransition } from "@/lib/detection/lifecycle";
@@ -137,14 +137,17 @@ export async function fetchBootstrap(userId: string) {
     user,
     tenants: store.tenants
       .filter((t) => user.roles.some((r) => r.tenant_id === t.tenant_id))
-      .map((t) => ({
-        tenant_id: t.tenant_id,
-        name: t.name,
-        sector: t.sector,
-        entitlements: t.entitlements,
-        role: user.roles.find((r) => r.tenant_id === t.tenant_id)!.role,
-        kill_switch: t.policy.kill_switch,
-      })),
+      .map((t) => {
+        const role = user.roles.find((r) => r.tenant_id === t.tenant_id)!.role;
+        return {
+          tenant_id: t.tenant_id,
+          name: t.name,
+          sector: t.sector,
+          entitlements: effectiveEntitlements({ userId, tenantId: t.tenant_id })!,
+          role,
+          kill_switch: t.policy.kill_switch,
+        };
+      }),
     globalKillSwitch: store.killSwitches.global,
     allUsers: store.users.map((u) => ({ user_id: u.user_id, display_name: u.display_name })),
   };
@@ -162,7 +165,7 @@ export async function fetchSessionCapabilities(ctx: SessionContext) {
     tenant: TENANT_MAP[ctx.tenantId]
       ? {
           name: TENANT_MAP[ctx.tenantId].name,
-          entitlements: TENANT_MAP[ctx.tenantId].entitlements,
+          entitlements: effectiveEntitlements(ctx)!,
           policy: TENANT_MAP[ctx.tenantId].policy,
         }
       : null,

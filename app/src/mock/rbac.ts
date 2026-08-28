@@ -1,4 +1,4 @@
-import { ROLES, TENANT_MAP, USER_MAP, type Permission, type RoleId } from "@/data/platform";
+import { ROLES, TENANT_MAP, USER_MAP, type Entitlements, type Permission, type RoleId } from "@/data/platform";
 
 export interface SessionContext {
   userId: string;
@@ -42,10 +42,22 @@ export function assertCan(ctx: SessionContext, permission: Permission): void {
   }
 }
 
+/**
+ * A tenant's entitlements as this actor sees them. Identical to the tenant's
+ * configured entitlements for every role except `super_admin`, whose
+ * break-glass access deliberately bypasses per-tenant product licensing.
+ */
+export function effectiveEntitlements(ctx: SessionContext): Entitlements | null {
+  const tenant = TENANT_MAP[ctx.tenantId];
+  if (!tenant) return null;
+  if (roleInTenant(ctx) === "super_admin") return { has_siem: true, has_soc: true, has_assessment: true };
+  return tenant.entitlements;
+}
+
 export function assertEntitlement(ctx: SessionContext, entitlement: "has_siem" | "has_soc" | "has_assessment"): void {
   const tenant = TENANT_MAP[ctx.tenantId];
   if (!tenant) throw new AccessError("tenant_not_found", "Unknown tenant.");
-  if (!tenant.entitlements[entitlement]) {
+  if (!effectiveEntitlements(ctx)?.[entitlement]) {
     const label = entitlement === "has_siem" ? "ZenC SIEM" : entitlement === "has_soc" ? "ZenC SOAR" : "ZenC Assessment";
     throw new AccessError("entitlement_missing", `${tenant.name} is not entitled to ${label}.`);
   }

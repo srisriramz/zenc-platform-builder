@@ -12,6 +12,7 @@ import {
   Gauge,
   KeyRound,
   LayoutDashboard,
+  Filter,
   LineChart,
   Network,
   PlayCircle,
@@ -69,6 +70,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/analytics", label: "Analytics", section: "Analytics", product: "platform", icon: LineChart, permission: "reporting.view" },
 
   // ---- Platform ----
+  { href: "/why-soc", label: "Why a SOC", section: "Platform", product: "platform", icon: Filter },
   { href: "/demo", label: "Guided Demo", section: "Platform", product: "platform", icon: PlayCircle },
   { href: "/tenants", label: "Tenants", section: "Platform", product: "platform", icon: Building2, permission: "admin.identity" },
   { href: "/onboarding", label: "Onboarding Wizard", section: "Platform", product: "platform", icon: UserPlus, permission: "admin.identity" },

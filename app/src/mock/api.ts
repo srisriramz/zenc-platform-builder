@@ -83,6 +83,7 @@ import { executeAction as runExecutor, rollbackAction as runRollback, isReversib
 import { summarizeCaseOrchestration } from "@/lib/soc/supervisor";
 import { reviewAgentRun } from "@/lib/soc/qa-governance";
 import { buildSocReport, draftReportNarrative } from "@/lib/soc/reporting";
+import { buildPipelineFunnel } from "@/lib/pipeline/funnel";
 import { hashString } from "@/lib/prng";
 
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
@@ -2883,6 +2884,70 @@ export async function fetchSocReport(ctx: SessionContext) {
 }
 
 export type SocReportView = Awaited<ReturnType<typeof fetchSocReport>>;
+
+/**
+ * The ingestion → incident funnel for the `/why-soc` explainer. Always worked
+ * from the Northwind Bank demo tenant (the only estate with the full SIEM +
+ * SOAR pipeline), like the guided-demo scripts. Every figure comes straight
+ * from the assembled seed.
+ */
+const FUNNEL_REFERENCE_TENANT = "tenant-northwind-bank";
+
+export async function fetchPipelineFunnel(ctx: SessionContext) {
+  await gate("pipeline-funnel", 240);
+  if (!can(ctx, "siem.view") && !can(ctx, "soc.view")) assertCan(ctx, "soc.view");
+
+  const store = getStore();
+  const T = FUNNEL_REFERENCE_TENANT;
+  const sources = store.telemetrySources.filter((s) => s.tenant_id === T);
+  // health-adjusted rate — matches what /ingestion shows as "at current rate"
+  const effEps = (s: (typeof sources)[number]) => s.nominal_eps * (HEALTH_FACTOR[s.health] ?? 1);
+
+  const streamEventsPerDay = sources.reduce((sum, s) => sum + effEps(s) * 86_400, 0);
+  const streamBytesPerDay = sources.reduce((sum, s) => sum + effEps(s) * 86_400 * s.avg_event_bytes, 0);
+
+  const normalized = store.normalizedEvents.filter((e) => e.tenant_id === T);
+  const quarantined = normalized.filter((e) => e.normalization_status === "quarantined").length;
+  const nativeAlerts = store.alerts.filter((a) => a.tenant_id === T).length;
+  const thirdPartyAlerts = store.thirdPartyAlerts.filter((a) => a.tenant_id === T).length;
+  const acts = store.actionRequests.filter((r) => r.tenant_id === T);
+
+  const report = socReportFor(T);
+  const casesPending = Math.max(0, report.throughput.candidates - report.throughput.cases_opened);
+
+  const funnel = buildPipelineFunnel({
+    tenantLabel: TENANT_MAP[T]?.name.replace(" (demo)", "") ?? T,
+    families: sources.map((s) => ({
+      family: s.family,
+      label: FAMILY_INGESTION_PROFILE[s.family].label,
+      volumeWeight: effEps(s),
+      health: s.health,
+    })),
+    streamEventsPerDay,
+    streamBytesPerDay,
+    sampleWindowHours: 72,
+    normalizedEvents: normalized.length,
+    quarantinedEvents: quarantined,
+    nativeAlerts,
+    thirdPartyAlerts,
+    acceptedEnvelopes: report.throughput.alerts_accepted,
+    candidates: report.throughput.candidates,
+    casesOpened: report.throughput.cases_opened,
+    casesPending,
+    actionsPlanned: acts.length,
+    actionsExecuted: acts.filter((r) => r.status === "verified" || r.status === "executed").length,
+    mttdSeconds: report.latency.mttd_seconds,
+    mttrSeconds: report.latency.mttr_seconds,
+    agentAssistedPct: report.quality.agent_assisted_pct,
+    agentAcceptancePct: report.quality.agent_acceptance_pct,
+    detectionCoveragePct: report.coverage?.detection_pct ?? null,
+    responseCoveragePct: report.coverage?.response_pct ?? null,
+  });
+
+  return { funnel, demoNowIso: store.demoNowIso };
+}
+
+export type PipelineFunnelView = Awaited<ReturnType<typeof fetchPipelineFunnel>>;
 
 export async function runReportingAgent(ctx: SessionContext) {
   await gate("reporting-agent", 600);

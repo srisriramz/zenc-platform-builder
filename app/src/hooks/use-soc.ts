@@ -2,18 +2,29 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  addCaseEvidence,
+  addCaseTask,
   assignCaseOwner,
   closeCase,
   confirmCaseOpen,
   fetchCaseDetail,
   fetchCases,
+  fetchEvidenceQueue,
   fetchIntakeQueue,
   fetchSocDashboard,
+  huntQuery,
+  openCaseFromHunt,
+  reviewEvidence,
+  runCaseAgent,
   setCaseStatus,
   suppressCandidate,
+  updateTaskStatus,
+  type AddEvidenceInput,
+  type AddTaskInput,
   type CaseFilter,
 } from "@/mock/api";
-import type { CaseStatus, ClosureClassification } from "@/schemas";
+import type { CaseStatus, ClosureClassification, TaskStatus } from "@/schemas";
+import type { HuntInput } from "@/lib/soc/hunt";
 import { useSession } from "@/store/session";
 import { useSessionContext } from "./use-platform";
 
@@ -55,6 +66,15 @@ export function useSocDashboard() {
   });
 }
 
+export function useEvidenceQueue(filter: { state?: string } = {}) {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["evidence-queue", ctx?.tenantId, filter],
+    queryFn: () => fetchEvidenceQueue(ctx!, filter),
+    enabled: !!ctx,
+  });
+}
+
 function useSocInvalidation() {
   const qc = useQueryClient();
   return () => {
@@ -62,7 +82,9 @@ function useSocInvalidation() {
     qc.invalidateQueries({ queryKey: ["cases"] });
     qc.invalidateQueries({ queryKey: ["case-detail"] });
     qc.invalidateQueries({ queryKey: ["soc-dashboard"] });
+    qc.invalidateQueries({ queryKey: ["evidence-queue"] });
     qc.invalidateQueries({ queryKey: ["agent-runs"] });
+    qc.invalidateQueries({ queryKey: ["agent-run"] });
     qc.invalidateQueries({ queryKey: ["audit"] });
   };
 }
@@ -111,6 +133,65 @@ export function useCloseCase() {
   return useMutation({
     mutationFn: ({ caseId, classification, reason }: { caseId: string; classification: ClosureClassification; reason?: string }) =>
       closeCase(ctx!, caseId, classification, reason),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAddEvidence() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({ mutationFn: (input: AddEvidenceInput) => addCaseEvidence(ctx!, input), onSuccess: invalidate });
+}
+
+export function useReviewEvidence() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({
+    mutationFn: ({ evidenceId, decision, comment }: { evidenceId: string; decision: "approved" | "rejected" | "under_review"; comment?: string }) =>
+      reviewEvidence(ctx!, evidenceId, decision, comment),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAddTask() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({ mutationFn: (input: AddTaskInput) => addCaseTask(ctx!, input), onSuccess: invalidate });
+}
+
+export function useUpdateTaskStatus() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({
+    mutationFn: ({ taskId, to }: { taskId: string; to: TaskStatus }) => updateTaskStatus(ctx!, taskId, to),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRunCaseAgent() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({
+    mutationFn: ({ caseId, agent }: { caseId: string; agent: "enrichment" | "investigation" | "advisor" }) =>
+      runCaseAgent(ctx!, caseId, agent),
+    onSuccess: invalidate,
+  });
+}
+
+export function useHuntQuery() {
+  const ctx = useSessionContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: HuntInput) => huntQuery(ctx!, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agent-runs"] }),
+  });
+}
+
+export function useOpenCaseFromHunt() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({
+    mutationFn: (input: { eventIds: string[]; title: string }) => openCaseFromHunt(ctx!, input),
     onSuccess: invalidate,
   });
 }

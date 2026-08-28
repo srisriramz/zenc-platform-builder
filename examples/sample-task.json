@@ -1,0 +1,16 @@
+{
+  "task_id": "task-demo-0001",
+  "tenant_id": "tenant-demo-bfsi-01",
+  "case_id": "case-demo-0001",
+  "title": "Isolate demo-host-17 at the network layer (dry-run)",
+  "detail": "Do not power off — preserve volatile state for the investigation.",
+  "status": "done",
+  "assignee_id": "user-demo-analyst-02",
+  "due_at": "2026-08-20T05:00:00Z",
+  "created_at": "2026-08-20T03:40:00Z",
+  "created_by": "user-demo-analyst-02",
+  "completed_at": "2026-08-20T04:20:00Z",
+  "completed_by": "user-demo-analyst-02",
+  "source": "agent",
+  "proposed_by_agent": "digital-advisor-agent"
+}

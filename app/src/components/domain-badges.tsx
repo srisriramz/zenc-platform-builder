@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/primitives";
-import type { CaseStatus, HealthState, Severity } from "@/schemas";
+import type { CaseStatus, EvidenceReviewState, HealthState, Severity, TaskStatus } from "@/schemas";
 import type { RuleLifecycleState } from "@/schemas";
 
 const SEV_STYLE: Record<Severity, string> = {
@@ -80,6 +80,38 @@ export function SlaBadge({ status, className }: { status: "on_track" | "at_risk"
   return (
     <Badge variant={s.variant} className={className}>
       {s.label}
+    </Badge>
+  );
+}
+
+const EVIDENCE_STYLE: Record<EvidenceReviewState, { variant: Parameters<typeof Badge>[0]["variant"]; label: string }> = {
+  submitted: { variant: "info", label: "Submitted" },
+  under_review: { variant: "warning", label: "Under review" },
+  approved: { variant: "success", label: "Approved" },
+  rejected: { variant: "danger", label: "Rejected" },
+};
+
+export function EvidenceStateBadge({ state, className }: { state: EvidenceReviewState; className?: string }) {
+  const s = EVIDENCE_STYLE[state];
+  return (
+    <Badge variant={s.variant} className={className}>
+      {s.label}
+    </Badge>
+  );
+}
+
+const TASK_STYLE: Record<TaskStatus, Parameters<typeof Badge>[0]["variant"]> = {
+  open: "outline",
+  in_progress: "info",
+  blocked: "warning",
+  done: "success",
+  cancelled: "outline",
+};
+
+export function TaskStatusBadge({ status, className }: { status: TaskStatus; className?: string }) {
+  return (
+    <Badge variant={TASK_STYLE[status]} className={cn("capitalize", className)}>
+      {status.replace("_", " ")}
     </Badge>
   );
 }

@@ -7,3 +7,5 @@ export * from "./audit-event";
 export * from "./entity-risk";
 export * from "./agent";
 export * from "./case";
+export * from "./task";
+export * from "./evidence";

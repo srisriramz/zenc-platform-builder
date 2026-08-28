@@ -199,10 +199,10 @@ function assemble() {
   const alerts = firings.flatMap((f) => f.alerts).sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at));
   const ruleFireCounts = Object.fromEntries(firings.map((f) => [f.rule.rule_id, f.alerts.length]));
 
-  // SOAR intake & triage — runs over native alerts + the third-party fixtures,
-  // through the same intake → grouping → triage path a live system would use.
+  // SOAR intake → triage → investigation — runs over native alerts + the
+  // third-party fixtures, through the same path a live system would use.
   const socAlerts = [...alerts, ...THIRD_PARTY_ALERTS];
-  const soc = buildSocLayer(socAlerts);
+  const soc = buildSocLayer(socAlerts, normalized, (id) => familyMap.get(id));
   const seededAgents = seedAgentActivity();
 
   return {
@@ -227,10 +227,12 @@ function assemble() {
     caseCandidates: soc.candidates,
     triageResults: soc.triageResults,
     cases: soc.cases,
+    caseEvidence: soc.evidence,
+    caseTasks: soc.tasks,
     candidateCaseId: soc.candidateCaseId,
     agentActivity: {
-      runs: [...seededAgents.runs, ...soc.triageRuns],
-      messages: [...seededAgents.messages, ...soc.triageMessages],
+      runs: [...seededAgents.runs, ...soc.agentRuns],
+      messages: [...seededAgents.messages, ...soc.agentMessages],
     },
     audit: seedAudit(),
     frameworks: {

@@ -10,15 +10,19 @@
 import { getStore } from "./store";
 import {
   addAgentRun,
+  addEvidence,
   addOpenedCase,
   addProposedRule,
+  addTask,
   appendAudit,
   getSession,
   recordIntakeDecision,
   updateAgentRun,
   updateProposedRule,
   upsertCaseOverride,
+  upsertEvidenceReview,
   upsertRuleOverride,
+  upsertTaskOverride,
 } from "./session-store";
 import { AccessError, assertCan, assertEntitlement, can, permissionsFor, roleInTenant, type SessionContext } from "./rbac";
 import { parseQuery, type ParseError } from "@/lib/query/parser";
@@ -34,19 +38,29 @@ import { dailyVolumeSeries } from "@/data/ingestion-profile";
 import { DEMO_NOW_ISO, minus, secondsBetween } from "@/lib/time";
 import type {
   AgentMessage,
+  AgentRun,
   AlertEnvelope,
   AnalystFeedback,
   Case,
   CaseStatus,
   ClosureClassification,
   CorrelationRule,
+  Evidence,
   NormalizedEvent,
   RuleLifecycleState,
+  Task,
+  TaskStatus,
 } from "@/schemas";
-import { caseSchema } from "@/schemas";
+import { caseSchema, evidenceSchema, taskSchema } from "@/schemas";
 import type { RuleDefinition } from "@/lib/correlation/types";
 import type { CaseCandidate, IntakeItem, TriageResult } from "@/lib/soc/types";
 import { caseIdFor } from "@/data/soc-seed";
+import { enrichCase } from "@/lib/soc/enrichment";
+import { adviseCase } from "@/lib/soc/advisor";
+import { investigateCase } from "@/lib/soc/investigation";
+import { buildCaseTimeline } from "@/lib/soc/timeline";
+import { runHunt, type HuntInput } from "@/lib/soc/hunt";
+import { hashString } from "@/lib/prng";
 
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
 
@@ -890,11 +904,69 @@ function mergedCases(tenantId: string): Case[] {
       status: o.status ?? c.status,
       owner_id: o.owner_id ?? c.owner_id,
       triaged_at: o.triaged_at ?? c.triaged_at,
-      closed_at: o.closed_at ?? c.closed_at,
-      closure: o.closure ?? c.closure,
+      closed_at: "closed_at" in o ? o.closed_at : c.closed_at,
+      closure: "closure" in o ? o.closure : c.closure,
       agent_run_ids: o.agent_run_ids ?? c.agent_run_ids,
     };
   });
+}
+
+/** seeded ∪ session-added evidence, with review overrides applied — tenant-scoped */
+function mergedEvidence(tenantId: string): Evidence[] {
+  const session = getSession();
+  const all = [
+    ...getStore().caseEvidence.filter((e) => e.tenant_id === tenantId),
+    ...session.addedEvidence.filter((e) => e.tenant_id === tenantId),
+  ];
+  return all.map((e) => {
+    const o = session.evidenceReviews.get(e.evidence_id);
+    if (!o) return e;
+    return {
+      ...e,
+      review_state: o.review_state ?? e.review_state,
+      reviewer_id: o.reviewer_id ?? e.reviewer_id,
+      reviewer_comment: o.reviewer_comment ?? e.reviewer_comment,
+      reviewed_at: o.reviewed_at ?? e.reviewed_at,
+    };
+  });
+}
+
+/** seeded ∪ session-added tasks, with status overrides applied — tenant-scoped */
+function mergedTasks(tenantId: string): Task[] {
+  const session = getSession();
+  const all = [
+    ...getStore().caseTasks.filter((t) => t.tenant_id === tenantId),
+    ...session.addedTasks.filter((t) => t.tenant_id === tenantId),
+  ];
+  return all.map((t) => {
+    const o = session.taskOverrides.get(t.task_id);
+    if (!o) return t;
+    return {
+      ...t,
+      status: o.status ?? t.status,
+      assignee_id: o.assignee_id ?? t.assignee_id,
+      completed_at: "completed_at" in o ? o.completed_at : t.completed_at,
+      completed_by: "completed_by" in o ? o.completed_by : t.completed_by,
+    };
+  });
+}
+
+function caseTechniqueIds(linkedAlerts: AlertEnvelope[]): string[] {
+  return [...new Set(linkedAlerts.flatMap((a) => (a.attack_techniques ?? []).map((t) => t.technique_id)))];
+}
+
+/** worst SLA signal across the case clock and its open tasks */
+function taskSlaRollup(tasks: Task[]): { overdue: number; due_soon: number } {
+  const now = DEMO_NOW_ISO;
+  let overdue = 0;
+  let due_soon = 0;
+  for (const t of tasks) {
+    if (t.status === "done" || t.status === "cancelled" || !t.due_at) continue;
+    const remaining = secondsBetween(now, t.due_at);
+    if (remaining <= 0) overdue++;
+    else if (remaining < 3600 * 2) due_soon++;
+  }
+  return { overdue, due_soon };
 }
 
 function getMergedCase(tenantId: string, caseId: string): Case | undefined {
@@ -1059,6 +1131,27 @@ export async function fetchCaseDetail(ctx: SessionContext, caseId: string) {
     .filter(Boolean)
     .sort()[0];
 
+  // evidence + tasks (seeded ∪ session)
+  const evidence = mergedEvidence(ctx.tenantId)
+    .filter((e) => e.linked_case_id === caseId)
+    .sort((a, b) => Date.parse(a.submitted_at) - Date.parse(b.submitted_at));
+  const tasks = mergedTasks(ctx.tenantId)
+    .filter((t) => t.case_id === caseId)
+    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+
+  // enrichment + advisor are read-only derived views — recomputed live
+  const tenantAlerts = socAlertsFor(ctx.tenantId);
+  const tenantCases = mergedCases(ctx.tenantId);
+  const enrichment = enrichCase(theCase, linkedAlerts, tenantAlerts, tenantCases, DEMO_NOW_ISO);
+  const advisor = adviseCase(theCase, caseTechniqueIds(linkedAlerts), evidence, DEMO_NOW_ISO);
+
+  // status-change history from the audit trail
+  const statusChanges = [...getSession().audit, ...store.audit]
+    .filter((a) => a.tenant_id === ctx.tenantId && a.target_id === caseId && a.action === "case_status_changed")
+    .map((a) => ({ at: a.occurred_at, detail: a.detail ?? "" }));
+
+  const timeline = buildCaseTimeline({ theCase, linkedAlerts, evidence, tasks, agentRuns, statusChanges });
+
   return {
     case: theCase,
     allowed_transitions: theCase.status === "closed" ? (["reopened"] as CaseStatus[]) : CASE_TRANSITIONS[theCase.status] ?? [],
@@ -1068,12 +1161,19 @@ export async function fetchCaseDetail(ctx: SessionContext, caseId: string) {
     candidate,
     triage,
     agentRuns,
+    evidence,
+    tasks,
+    task_sla: taskSlaRollup(tasks),
+    enrichment,
+    advisor,
+    timeline,
     latency: {
       received_at: firstReceived ?? null,
       ack_seconds: theCase.triaged_at && firstReceived ? secondsBetween(firstReceived, theCase.triaged_at) : null,
       resolve_seconds: theCase.closed_at ? secondsBetween(theCase.created_at, theCase.closed_at) : null,
     },
     caseWorkers: caseWorkersFor(ctx.tenantId),
+    canReviewEvidence: can(ctx, "evidence.review"),
   };
 }
 
@@ -1114,6 +1214,18 @@ export async function fetchSocDashboard(ctx: SessionContext) {
     cases.filter((c) => c.triaged_at).map((c) => secondsBetween(c.created_at, c.triaged_at!)),
   );
 
+  const openCaseIds = new Set(open.map((c) => c.case_id));
+  const evidence = mergedEvidence(ctx.tenantId);
+  const tasks = mergedTasks(ctx.tenantId);
+  const evidencePendingReview = evidence.filter(
+    (e) => (e.review_state === "submitted" || e.review_state === "under_review") && openCaseIds.has(e.linked_case_id ?? ""),
+  ).length;
+  const openTasks = tasks.filter((t) => t.status !== "done" && t.status !== "cancelled" && openCaseIds.has(t.case_id));
+  const tasksOverdue = openTasks.filter((t) => t.due_at && secondsBetween(store.demoNowIso, t.due_at) <= 0).length;
+
+  const workload: Record<string, number> = {};
+  for (const c of open) workload[c.owner_id] = (workload[c.owner_id] ?? 0) + 1;
+
   return {
     demoNowIso: store.demoNowIso,
     intake: {
@@ -1137,6 +1249,14 @@ export async function fetchSocDashboard(ctx: SessionContext) {
       mtta_seconds: mtta,
       mttr_seconds: mttrResolve,
     },
+    investigation: {
+      evidence_pending_review: evidencePendingReview,
+      open_tasks: openTasks.length,
+      tasks_overdue: tasksOverdue,
+    },
+    workload: Object.entries(workload)
+      .map(([owner_id, open_cases]) => ({ owner_id, open_cases }))
+      .sort((a, b) => b.open_cases - a.open_cases),
     recentCases: cases.slice().sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 6),
   };
 }
@@ -1324,4 +1444,458 @@ export async function closeCase(
     detail: `${theCase.status} → closed (${classification})`,
   });
   return { status: "closed" as const, classification };
+}
+
+// ---------------------------------------------------------------------------
+// M4b — SOAR investigation (evidence, tasks, timeline, investigation agents)
+// ---------------------------------------------------------------------------
+
+function evalCtxForTenant(tenantId: string) {
+  const map = new Map(getStore().telemetrySources.filter((s) => s.tenant_id === tenantId).map((s) => [s.telemetry_source_id, s.family]));
+  return { familyOf: (id: string) => map.get(id) };
+}
+
+function stableId(prefix: string, seed: string): string {
+  return `${prefix}-${(hashString(seed) >>> 0).toString(36)}`;
+}
+
+// ---- Evidence -------------------------------------------------------------
+
+export interface EvidenceQueueRow {
+  evidence: Evidence;
+  case_title: string;
+  case_status: string;
+}
+
+export async function fetchEvidenceQueue(ctx: SessionContext, filter: { state?: string } = {}) {
+  await gate("evidence-queue", 200);
+  assertEntitlement(ctx, "has_soc");
+  if (!can(ctx, "evidence.review") && !can(ctx, "case.work") && !can(ctx, "audit.view")) {
+    assertCan(ctx, "evidence.review");
+  }
+  const caseById = new Map(mergedCases(ctx.tenantId).map((c) => [c.case_id, c] as const));
+  let rows: EvidenceQueueRow[] = mergedEvidence(ctx.tenantId).map((evidence) => {
+    const c = evidence.linked_case_id ? caseById.get(evidence.linked_case_id) : undefined;
+    return { evidence, case_title: c?.title ?? evidence.linked_case_id ?? "—", case_status: c?.status ?? "—" };
+  });
+  if (filter.state) rows = rows.filter((r) => r.evidence.review_state === filter.state);
+  rows.sort((a, b) => Date.parse(b.evidence.submitted_at) - Date.parse(a.evidence.submitted_at));
+
+  const counts: Record<string, number> = { submitted: 0, under_review: 0, approved: 0, rejected: 0 };
+  for (const r of mergedEvidence(ctx.tenantId)) counts[r.review_state]++;
+
+  return { rows, counts, can_review: can(ctx, "evidence.review") };
+}
+
+export interface AddEvidenceInput {
+  case_id: string;
+  title: string;
+  reference_type: "file" | "link" | "note";
+  reference: string;
+  confidence: number;
+  supersedes_evidence_id?: string;
+}
+
+export async function addCaseEvidence(ctx: SessionContext, input: AddEvidenceInput): Promise<{ evidence_id: string }> {
+  await gate("add-evidence", 140);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const theCase = getMergedCase(ctx.tenantId, input.case_id);
+  if (!theCase) throw new AccessError("permission_denied", "No such case.");
+  if (input.supersedes_evidence_id) {
+    const prior = mergedEvidence(ctx.tenantId).find((e) => e.evidence_id === input.supersedes_evidence_id);
+    if (!prior || prior.linked_case_id !== input.case_id) {
+      throw new AccessError("permission_denied", "The superseded evidence item is not on this case.");
+    }
+  }
+  const now = DEMO_NOW_ISO;
+  const evidence_id = stableId("ev-u", `${input.case_id}:${input.title}:${now}:${getSession().addedEvidence.length}`);
+  const item: Evidence = evidenceSchema.parse({
+    evidence_id,
+    tenant_id: ctx.tenantId,
+    origin: "soc",
+    linked_case_id: input.case_id,
+    reference_type: input.reference_type,
+    reference: input.reference,
+    title: input.title,
+    submitted_by: ctx.userId,
+    submitted_at: now,
+    review_state: "submitted",
+    confidence: input.confidence,
+    content_hash: `sha256:${(hashString(input.reference) >>> 0).toString(16).padStart(8, "0")}${(hashString(input.reference + now) >>> 0).toString(16).padStart(8, "0")}`,
+    supersedes_evidence_id: input.supersedes_evidence_id ?? null,
+  });
+  addEvidence(item);
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "evidence_added",
+    target_type: "evidence",
+    target_id: evidence_id,
+    detail: `${input.title} → case ${input.case_id}${input.supersedes_evidence_id ? ` (supersedes ${input.supersedes_evidence_id})` : ""}`,
+  });
+  return { evidence_id };
+}
+
+export async function reviewEvidence(
+  ctx: SessionContext,
+  evidenceId: string,
+  decision: "approved" | "rejected" | "under_review",
+  comment?: string,
+) {
+  await gate("review-evidence", 140);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "evidence.review");
+  const item = mergedEvidence(ctx.tenantId).find((e) => e.evidence_id === evidenceId);
+  if (!item) throw new AccessError("permission_denied", "No such evidence item.");
+  if (item.submitted_by === ctx.userId) {
+    throw new AccessError("permission_denied", "You cannot review evidence you submitted — a second person must review it.");
+  }
+  if (decision === "rejected" && !comment?.trim()) {
+    throw new AccessError("permission_denied", "A rejection needs a comment.");
+  }
+  const now = DEMO_NOW_ISO;
+  const patch =
+    decision === "under_review"
+      ? { review_state: "under_review" as const }
+      : { review_state: decision, reviewer_id: ctx.userId, reviewer_comment: comment?.trim(), reviewed_at: now };
+  // validate the resulting item against the contract
+  evidenceSchema.parse({ ...item, ...patch });
+  upsertEvidenceReview(evidenceId, patch);
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "evidence_reviewed",
+    target_type: "evidence",
+    target_id: evidenceId,
+    detail: `${decision}${comment?.trim() ? ` — "${comment.trim()}"` : ""}`,
+  });
+  return { review_state: decision };
+}
+
+// ---- Tasks --------------------------------------------------------------
+
+export interface AddTaskInput {
+  case_id: string;
+  title: string;
+  detail?: string;
+  assignee_id?: string;
+  due_in_hours?: number;
+}
+
+export async function addCaseTask(ctx: SessionContext, input: AddTaskInput): Promise<{ task_id: string }> {
+  await gate("add-task", 120);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const theCase = getMergedCase(ctx.tenantId, input.case_id);
+  if (!theCase) throw new AccessError("permission_denied", "No such case.");
+  if (input.assignee_id && !caseWorkersFor(ctx.tenantId).some((w) => w.user_id === input.assignee_id)) {
+    throw new AccessError("permission_denied", "That user cannot be assigned a task in this tenant.");
+  }
+  const now = DEMO_NOW_ISO;
+  const task_id = stableId("task-u", `${input.case_id}:${input.title}:${getSession().addedTasks.length}`);
+  const item: Task = taskSchema.parse({
+    task_id,
+    tenant_id: ctx.tenantId,
+    case_id: input.case_id,
+    title: input.title,
+    detail: input.detail,
+    status: "open",
+    assignee_id: input.assignee_id ?? theCase.owner_id,
+    due_at: input.due_in_hours ? minus(now, { hours: -input.due_in_hours }) : undefined,
+    created_at: now,
+    created_by: ctx.userId,
+    source: "human",
+  });
+  addTask(item);
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "task_created",
+    target_type: "task",
+    target_id: task_id,
+    detail: `${input.title} → case ${input.case_id}`,
+  });
+  return { task_id };
+}
+
+const TASK_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
+  open: ["in_progress", "blocked", "cancelled"],
+  in_progress: ["blocked", "done", "open"],
+  blocked: ["in_progress", "cancelled"],
+  done: ["in_progress"],
+  cancelled: ["open"],
+};
+
+export async function updateTaskStatus(ctx: SessionContext, taskId: string, to: TaskStatus) {
+  await gate("update-task", 110);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const task = mergedTasks(ctx.tenantId).find((t) => t.task_id === taskId);
+  if (!task) throw new AccessError("permission_denied", "No such task.");
+  if (!(TASK_TRANSITIONS[task.status] ?? []).includes(to)) {
+    throw new AccessError("permission_denied", `A ${task.status} task cannot move to ${to}.`);
+  }
+  const now = DEMO_NOW_ISO;
+  const patch =
+    to === "done"
+      ? { status: to, completed_at: now, completed_by: ctx.userId }
+      : { status: to, completed_at: undefined, completed_by: undefined };
+  upsertTaskOverride(taskId, patch);
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "task_updated",
+    target_type: "task",
+    target_id: taskId,
+    detail: `${task.status} → ${to}`,
+  });
+  return { status: to };
+}
+
+// ---- On-demand investigation agents ------------------------------------
+
+export async function runCaseAgent(ctx: SessionContext, caseId: string, agent: "enrichment" | "investigation" | "advisor") {
+  await gate(`run-${agent}`, agent === "investigation" ? 700 : 300);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const store = getStore();
+  const theCase = getMergedCase(ctx.tenantId, caseId);
+  if (!theCase) throw new AccessError("permission_denied", "No such case.");
+  const linkedAlerts = socAlertsFor(ctx.tenantId).filter((a) => theCase.linked_alert_ids.includes(a.envelope_id));
+  const now = DEMO_NOW_ISO;
+  const runId = `run-${agent === "enrichment" ? "enrich" : agent === "investigation" ? "investigate" : "advisor"}-${caseId}-${(hashString(now + getSession().agentRuns.length) >>> 0).toString(36)}`;
+
+  const mkMessage = (overrides: Partial<AgentMessage>): AgentMessage => ({
+    message_id: `${runId}-m1`,
+    agent_run_id: runId,
+    agent_name: "enrichment-agent",
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    prompt_version: "v1.0",
+    tool_version: "v1.0",
+    input_ref: caseId,
+    tool_calls: [],
+    claim: "",
+    confidence: 0.5,
+    evidence: [],
+    ...overrides,
+  });
+
+  let message: AgentMessage;
+  const newEvidenceIds: string[] = [];
+
+  if (agent === "enrichment") {
+    const enr = enrichCase(theCase, linkedAlerts, socAlertsFor(ctx.tenantId), mergedCases(ctx.tenantId), now);
+    message = mkMessage({
+      agent_name: "enrichment-agent",
+      prompt_version: "enrichment-agent-prompt-v1.0",
+      tool_version: "asset-lookup-tool-v1.0",
+      tool_calls: [
+        { tool_name: "asset-lookup", called_at: now, scope_or_bound: `${enr.entities.length} entity/entities` },
+        { tool_name: "identity-lookup", called_at: now, scope_or_bound: "one entity per call" },
+        { tool_name: "ti-lookup", called_at: now, scope_or_bound: "cached" },
+      ],
+      claim: `Re-ran enrichment for ${enr.entities.length} entities. ${enr.notable[0]}`,
+      confidence: 0.7,
+      evidence: enr.notable.slice(0, 4).map((n) => ({ evidence_ref: n, supports: true, freshness: now })),
+    });
+  } else if (agent === "advisor") {
+    const adv = adviseCase(theCase, caseTechniqueIds(linkedAlerts), mergedEvidence(ctx.tenantId).filter((e) => e.linked_case_id === caseId), now);
+    message = mkMessage({
+      agent_name: "digital-advisor-agent",
+      prompt_version: "digital-advisor-agent-prompt-v1.0",
+      tool_version: "approved-knowledge-read-tool-v1.0",
+      tool_calls: [
+        { tool_name: "case-read", called_at: now, scope_or_bound: "the assigned case" },
+        { tool_name: "approved-knowledge-read", called_at: now, scope_or_bound: `${adv.based_on.knowledge.length} lesson(s)` },
+      ],
+      claim: adv.recommendation.slice(0, 240),
+      confidence: adv.based_on.knowledge.length ? 0.65 : 0.4,
+      evidence: adv.caveats.map((c) => ({ evidence_ref: c, supports: false, freshness: now })),
+      policy_outcome: "advisory only — the Digital Advisor cannot approve or execute an action",
+    });
+  } else {
+    const findings = investigateCase(
+      theCase,
+      linkedAlerts,
+      store.normalizedEvents.filter((e) => e.tenant_id === ctx.tenantId),
+      evalCtxForTenant(ctx.tenantId),
+    );
+    for (const f of findings) {
+      const evidence_id = stableId("ev", `${f.finding_id}:${now}`);
+      newEvidenceIds.push(evidence_id);
+      addEvidence(
+        evidenceSchema.parse({
+          evidence_id,
+          tenant_id: ctx.tenantId,
+          origin: "soc",
+          linked_case_id: caseId,
+          reference_type: "note",
+          reference: `${f.summary}\n\nquery: ${f.query}\nwindow: ${f.window.fromIso} → ${f.window.toIso}\ncited events: ${f.cited_event_ids.join(", ") || "(none — no corroborating local telemetry)"}`,
+          title: `Investigation finding — ${linkedAlerts.find((a) => f.query.includes(a.entities?.[0]?.value ?? " "))?.title ?? "entity activity"}`,
+          submitted_by: "investigation-agent",
+          submitted_at: now,
+          review_state: "submitted",
+          confidence: f.confidence,
+          content_hash: `sha256:${(hashString(f.summary) >>> 0).toString(16).padStart(8, "0")}`,
+          supersedes_evidence_id: null,
+        }),
+      );
+      appendAudit({
+        tenant_id: ctx.tenantId,
+        occurred_at: now,
+        actor: { principal_id: "investigation-agent", principal_type: "agent" },
+        action: "evidence_added",
+        target_type: "evidence",
+        target_id: evidence_id,
+        detail: `Investigation finding drafted (submitted, awaiting review) → case ${caseId}`,
+      });
+    }
+    message = mkMessage({
+      agent_name: "investigation-agent",
+      prompt_version: "investigation-agent-prompt-v1.0",
+      tool_version: "log-search-tool-v2.1",
+      tool_calls: [
+        { tool_name: "case-read", called_at: now, scope_or_bound: "the assigned case" },
+        { tool_name: "log-search", called_at: now, scope_or_bound: `≤5000 events, ≤24h, ${findings.length} quer${findings.length === 1 ? "y" : "ies"}` },
+      ],
+      claim: findings.length
+        ? `Ran ${findings.length} bounded, source-cited quer${findings.length === 1 ? "y" : "ies"}; drafted ${findings.length} finding(s) as submitted evidence.`
+        : "Ran bounded queries; no corroborating telemetry in the sample.",
+      confidence: findings.length ? Math.max(...findings.map((f) => f.confidence)) : 0.35,
+      evidence: findings.map((f) => ({ evidence_ref: `finding: ${f.matched_count} events`, supports: true, freshness: now })),
+      policy_outcome: "findings written as evidence in 'submitted' state — a human reviews before they count",
+    });
+  }
+
+  const run: AgentRun = {
+    agent_run_id: runId,
+    tenant_id: ctx.tenantId,
+    case_id: caseId,
+    subject_type: "case",
+    started_at: now,
+    completed_at: now,
+    message_ids: [message.message_id],
+    total_tool_calls: message.tool_calls.length,
+    elapsed_seconds: agent === "investigation" ? 22 : 9,
+    human_touchpoints: [{ principal_id: ctx.userId, action: "reviewed", at: now, note: `Invoked the ${agent} agent` }],
+    outcome: "completed",
+    analyst_feedback: null,
+  };
+  addAgentRun(run, [message]);
+  return { run_id: runId, new_evidence_ids: newEvidenceIds };
+}
+
+// ---- Hunt --------------------------------------------------------------
+
+export async function huntQuery(ctx: SessionContext, input: HuntInput) {
+  await gate("hunt", 320);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "soc.view");
+  const store = getStore();
+  const pool = store.normalizedEvents.filter((e) => e.tenant_id === ctx.tenantId);
+  const result = runHunt(input, pool, evalCtxForTenant(ctx.tenantId));
+
+  // record the hunt as an agent run (the Hunt Agent ran an analyst query)
+  const now = DEMO_NOW_ISO;
+  const runId = `run-hunt-${(hashString(input.query + now + getSession().agentRuns.length) >>> 0).toString(36)}`;
+  const ok = !("error" in result);
+  const message: AgentMessage = {
+    message_id: `${runId}-m1`,
+    agent_run_id: runId,
+    agent_name: "hunt-agent",
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    prompt_version: "hunt-agent-prompt-v1.0",
+    tool_version: "log-search-tool-v2.1",
+    input_ref: input.query.slice(0, 120),
+    tool_calls: [{ tool_name: "log-search", called_at: now, scope_or_bound: "≤5000 events, ≤7d, safe parser only" }],
+    claim: ok
+      ? `Analyst hunt: ${(result as { matched_count: number }).matched_count} match(es) for the query in the window.`
+      : `Analyst hunt rejected: ${(result as { message?: string }).message ?? "bad query"}.`,
+    confidence: 0.5,
+    evidence: [],
+    policy_outcome: "the Hunt Agent never auto-creates a case — the analyst decides",
+  };
+  addAgentRun(
+    {
+      agent_run_id: runId,
+      tenant_id: ctx.tenantId,
+      case_id: `hunt:${input.query.slice(0, 40)}`,
+      subject_type: "case",
+      started_at: now,
+      completed_at: now,
+      message_ids: [message.message_id],
+      total_tool_calls: 1,
+      elapsed_seconds: 4,
+      human_touchpoints: [{ principal_id: ctx.userId, action: "reviewed", at: now, note: "Issued the hunt query" }],
+      outcome: "completed",
+      analyst_feedback: null,
+    },
+    [message],
+  );
+
+  return { result, run_id: runId };
+}
+
+export async function openCaseFromHunt(ctx: SessionContext, input: { eventIds: string[]; title: string }) {
+  await gate("case-from-hunt", 180);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  if (input.eventIds.length === 0) throw new AccessError("permission_denied", "Select at least one event to open a case.");
+  const store = getStore();
+  const events = store.normalizedEvents.filter((e) => e.tenant_id === ctx.tenantId && input.eventIds.includes(e.event_id));
+  if (events.length === 0) throw new AccessError("permission_denied", "None of those events exist in this tenant.");
+  const now = DEMO_NOW_ISO;
+  const caseId = stableId("case-hunt", `${ctx.tenantId}:${input.title}:${now}`);
+  const first = events.map((e) => e.occurred_at).sort()[0];
+
+  const newCase: Case = caseSchema.parse({
+    case_id: caseId,
+    tenant_id: ctx.tenantId,
+    title: input.title,
+    status: "triaged",
+    severity: "medium",
+    owner_id: ctx.userId,
+    linked_alert_ids: [],
+    created_at: now,
+    triaged_at: now,
+    sla: slaForCase("medium", now),
+  });
+  addOpenedCase(newCase);
+
+  const evidence_id = stableId("ev-hunt", caseId);
+  addEvidence(
+    evidenceSchema.parse({
+      evidence_id,
+      tenant_id: ctx.tenantId,
+      origin: "soc",
+      linked_case_id: caseId,
+      reference_type: "note",
+      title: "Hunt result — events selected by the analyst",
+      reference: `first activity: ${first}\nevents: ${events.map((e) => e.event_id).join(", ")}`,
+      submitted_by: ctx.userId,
+      submitted_at: now,
+      review_state: "submitted",
+      confidence: 0.6,
+      content_hash: `sha256:${(hashString(events.map((e) => e.event_id).join()) >>> 0).toString(16).padStart(8, "0")}`,
+      supersedes_evidence_id: null,
+    }),
+  );
+
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "case_created",
+    target_type: "case",
+    target_id: caseId,
+    detail: `Opened from a hunt result — ${events.length} event(s)`,
+  });
+  return { case_id: caseId };
 }

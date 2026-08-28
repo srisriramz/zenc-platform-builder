@@ -4,8 +4,11 @@ import { describe, expect, it } from "vitest";
 import {
   alertEnvelopeSchema,
   auditEventSchema,
+  caseSchema,
   correlationRuleSchema,
+  evidenceSchema,
   normalizedEventSchema,
+  taskSchema,
   telemetrySourceSchema,
 } from "./index";
 
@@ -22,6 +25,9 @@ describe("Zod schemas accept the repo's example fixtures", () => {
     ["sample-alert-envelope.json", alertEnvelopeSchema],
     ["sample-correlation-rule.json", correlationRuleSchema],
     ["sample-audit-event.json", auditEventSchema],
+    ["sample-case.json", caseSchema],
+    ["sample-evidence.json", evidenceSchema],
+    ["sample-task.json", taskSchema],
   ];
 
   for (const [file, schema] of cases) {
@@ -90,5 +96,39 @@ describe("schema refinements enforce the non-negotiable invariants", () => {
   it("an unknown telemetry family is rejected", () => {
     const src = example("sample-telemetry-source.json") as Record<string, unknown>;
     expect(telemetrySourceSchema.safeParse({ ...src, family: "carrier_pigeon" }).success).toBe(false);
+  });
+
+  it("a closed case with no closure classification is rejected", () => {
+    const c = example("sample-case.json") as Record<string, unknown>;
+    const { closure, ...rest } = c;
+    void closure;
+    expect(caseSchema.safeParse(rest).success).toBe(false);
+  });
+
+  it("a suppressed case closure with no documented reason is rejected", () => {
+    const c = example("sample-case.json") as Record<string, unknown>;
+    expect(
+      caseSchema.safeParse({ ...c, closure: { classification: "suppressed", closed_by: "u1" } }).success,
+    ).toBe(false);
+  });
+
+  it("SOC-origin evidence must link to a case", () => {
+    const e = example("sample-evidence.json") as Record<string, unknown>;
+    expect(evidenceSchema.safeParse({ ...e, origin: "soc", linked_case_id: undefined }).success).toBe(false);
+  });
+
+  it("approved evidence with no reviewer is rejected", () => {
+    const e = example("sample-evidence.json") as Record<string, unknown>;
+    const { reviewer_id, reviewed_at, ...rest } = e;
+    void reviewer_id;
+    void reviewed_at;
+    expect(evidenceSchema.safeParse(rest).success).toBe(false);
+  });
+
+  it("a done task with no completed_by is rejected", () => {
+    const t = example("sample-task.json") as Record<string, unknown>;
+    const { completed_by, ...rest } = t;
+    void completed_by;
+    expect(taskSchema.safeParse(rest).success).toBe(false);
   });
 });

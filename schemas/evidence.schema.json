@@ -25,6 +25,10 @@
       "enum": ["file", "link", "note"]
     },
     "reference": { "type": "string" },
+    "title": {
+      "type": "string",
+      "description": "Short human-readable label for the artifact."
+    },
     "submitted_by": { "type": "string" },
     "submitted_at": { "type": "string", "format": "date-time" },
     "review_state": {

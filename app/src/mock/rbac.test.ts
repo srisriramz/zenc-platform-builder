@@ -49,6 +49,18 @@ describe("permission checks are enforced regardless of UI", () => {
     }
   });
 
+  it("evidence.review is held by the reviewer and (as the second-set-of-eyes function) the approver — never a case worker", () => {
+    expect(can({ userId: "user-lena-reviewer", tenantId: "tenant-northwind-bank" }, "evidence.review")).toBe(true);
+    expect(can(approver, "evidence.review")).toBe(true);
+    expect(can(analyst, "evidence.review")).toBe(false);
+    // no role bundles both writing case evidence and reviewing it
+    const conflicted = ROLE_IDS.filter((r) => {
+      const perms = permissionsFor({ userId: pick(r), tenantId: "tenant-northwind-bank" });
+      return perms.includes("case.work") && perms.includes("evidence.review");
+    });
+    expect(conflicted).toEqual([]);
+  });
+
   it("an auditor is read-only — no query, no approve, no admin", () => {
     expect(can(auditor, "audit.view")).toBe(true);
     expect(can(auditor, "siem.query")).toBe(false);

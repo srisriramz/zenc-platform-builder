@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zenc.example/schemas/task.schema.json",
+  "title": "Case Task",
+  "description": "An assignable unit of investigation/response work under a Case. Tasks have due-by clocks that roll up into the Case SLA status. Task history is not deleted when a case closes.",
+  "type": "object",
+  "required": ["task_id", "tenant_id", "case_id", "title", "status", "created_at", "created_by", "source"],
+  "properties": {
+    "task_id": { "type": "string" },
+    "tenant_id": { "type": "string" },
+    "case_id": { "type": "string" },
+    "title": { "type": "string" },
+    "detail": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["open", "in_progress", "blocked", "done", "cancelled"]
+    },
+    "assignee_id": { "type": "string" },
+    "due_at": { "type": "string", "format": "date-time" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "created_by": { "type": "string" },
+    "completed_at": { "type": "string", "format": "date-time" },
+    "completed_by": { "type": "string" },
+    "source": {
+      "type": "string",
+      "enum": ["human", "agent", "playbook"],
+      "description": "Who created the task. An agent may propose a task; it is still worked and closed by a human."
+    },
+    "proposed_by_agent": {
+      "type": "string",
+      "description": "Named agent, present only when source is 'agent'."
+    }
+  },
+  "if": {
+    "properties": { "status": { "const": "done" } }
+  },
+  "then": {
+    "required": ["completed_at", "completed_by"]
+  }
+}

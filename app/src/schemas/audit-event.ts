@@ -17,6 +17,8 @@ export const auditAction = z.enum([
   "case_created",
   "case_status_changed",
   "alert_suppressed",
+  "task_created",
+  "task_updated",
 ]);
 
 export const auditTargetType = z.enum([
@@ -24,6 +26,7 @@ export const auditTargetType = z.enum([
   "evidence",
   "case",
   "alert",
+  "task",
   "assessment",
   "playbook",
   "correlation_rule",

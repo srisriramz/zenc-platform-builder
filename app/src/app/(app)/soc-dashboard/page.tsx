@@ -56,11 +56,11 @@ export default function SocDashboardPage() {
           href={drillHref("/cases", { status: "" })}
         />
         <StatTile
-          label="Quarantined at intake"
-          value={d.intake.quarantined}
-          tone={d.intake.quarantined ? "warning" : "default"}
-          sub={`${d.intake.duplicate} deduplicated`}
-          href="/alerts"
+          label="Evidence pending review"
+          value={d.investigation.evidence_pending_review}
+          tone={d.investigation.evidence_pending_review ? "warning" : "success"}
+          sub={`${d.investigation.tasks_overdue} task(s) overdue`}
+          href="/evidence"
         />
       </StatGrid>
 
@@ -112,6 +112,22 @@ export default function SocDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {d.workload.length > 0 && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Analyst workload — open cases per owner</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {d.workload.map((w) => (
+              <div key={w.owner_id} className="flex items-center justify-between rounded-md border border-border px-2 py-1.5 text-sm">
+                <span>{nameOf(w.owner_id)}</span>
+                <span className="font-mono tabular-nums">{w.open_cases}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="mt-4">
         <CardHeader className="flex-row items-center justify-between">

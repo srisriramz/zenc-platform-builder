@@ -13,7 +13,7 @@ follow `templates/claude-code-bootstrap.md`.
 | **M2** | Correlation engine + ATT&CK-mapped rules → alert-envelope | ✅ done |
 | **M3** | Detection engineering workflow — Detection Engineer Agent, rule lifecycle, /agents | ✅ done |
 | **M4a** | SOAR intake & triage — envelope intake, dedup, grouping, Triage Agent, cases | ✅ done |
-| M4b | SOAR investigation — evidence + chain-of-custody, timeline, tasks/SLA, closure | not started |
+| **M4b** | SOAR investigation — evidence + custody, timeline, tasks/SLA, Enrichment/Investigation/Hunt/Advisor agents | ✅ done |
 | M4c | SOAR response — playbooks, approval queue (no self-approval), dry-run executor, kill switches | not started |
 | M5 | ATT&CK × D3FEND coverage matrix + SOC reporting | not started |
 
@@ -199,6 +199,53 @@ component API, no dependency on the CLI.
 - 20 SOAR tests (intake dedup/quarantine/no-source-branch, deterministic
   grouping, triage open-vs-suppress). **117 tests total.**
 
+## M4b — what's in
+
+- **Evidence + chain of custody** — `schemas/evidence.ts` (Zod mirror of the
+  Assessment-shaped `evidence.schema.json`) with `.refine` guards: approved
+  evidence needs a reviewer + timestamp; SOC-origin evidence must link to a
+  case. Every item is immutable — a correction is a NEW item with a
+  `supersedes_evidence_id` link, never an edit. Each carries a `content_hash`
+  tamper marker and records who/what submitted it (human or named agent).
+- **Evidence review** (`/evidence`) — one approve/reject queue. `evidence.review`
+  is held by the `reviewer` role (Lena) and — as the same second-set-of-eyes
+  function — the `approver` role (Dana, present in every SOC tenant). No role
+  bundles `case.work` + `evidence.review`, so the reviewer is always a second
+  person; the API also blocks reviewing your own submission explicitly.
+- **Tasks + SLA** — new `schemas/task.schema.json` + Zod mirror (a done task
+  needs `completed_at`/`completed_by`). Assignable, due-clocked; overdue tasks
+  roll into the case SLA panel. Agent-proposed tasks are labelled and still
+  worked/closed by a human.
+- **Case timeline** — `lib/soc/timeline.ts` `buildCaseTimeline(...)` — a pure
+  derived view over the case's alerts, evidence, tasks, agent runs, and status
+  changes. Nothing stored.
+- **Four investigation-phase agents**, all deterministic heuristics shaped as
+  real agent messages:
+  - **Enrichment Agent** (L1, `lib/soc/enrichment.ts`) — asset registry
+    (`data/assets.ts`), identity directory, deterministic TI reputation,
+    prior-sightings counts. Recomputed live; never persisted as evidence,
+    never touches case status.
+  - **Investigation Agent** (L1/L2, `lib/soc/investigation.ts`) — bounded,
+    source-cited queries via the M1 safe parser (`≤24h`, `≤5000` events,
+    tenant-scoped). Findings become `submitted` evidence citing the exact
+    events they rest on.
+  - **Hunt Agent** (L1, `lib/soc/hunt.ts` + `/hunt`) — analyst-initiated
+    bounded query (`≤7d`). Never auto-creates a case — the analyst selects
+    events and opens one.
+  - **Digital Advisor Agent** (L1, `lib/soc/advisor.ts`) — answers "what next"
+    from a seeded lessons base (`data/soc-knowledge.ts`) + the case's
+    *approved* evidence only. Every output carries the advisory-only / dry-run
+    caveats.
+- **On-demand** — the case detail page can re-run any of enrichment /
+  investigation / advisor; each records a fresh agent run.
+- **Screens** — `/cases/[id]` gains Timeline / Evidence / Tasks / Context
+  (enrichment + advisor) / Agents tabs plus a live task-SLA rollup; `/evidence`
+  and `/hunt` are new; `/soc-dashboard` gains evidence-pending-review,
+  tasks-overdue, and analyst-workload.
+- Audit gains `task_created` / `task_updated` and target types `task` (+
+  `alert` from M4a). 27 new SOAR tests (enrichment, investigation, advisor,
+  hunt bounds, timeline). **144 tests total.**
+
 ## M2 — what's in
 
 - **Correlation engine** (`lib/correlation/`) — deterministic, LLM-free. Rule
@@ -273,7 +320,7 @@ component API, no dependency on the CLI.
 
 ## Tests
 
-Vitest, pure-function coverage on the load-bearing pieces (117 tests):
+Vitest, pure-function coverage on the load-bearing pieces (144 tests):
 
 - `src/lib/query/parser.test.ts` — the safe query parser: valid grammar,
   injection/code rejection (`;`, `$(…)`, backticks, `--`, `/* */`, `\x`),
@@ -306,5 +353,5 @@ npm install
 npm run dev       # http://localhost:3000
 npm run build     # production build — passes clean
 npm run lint      # ESLint — passes clean
-npm test          # Vitest — 117 tests, passes clean
+npm test          # Vitest — 144 tests, passes clean
 ```

@@ -59,8 +59,8 @@ export const ROLES: Record<RoleId, Role> = {
   approver: {
     id: "approver",
     label: "Approver",
-    description: "Independent approval of action requests and rule promotion to enabled.",
-    permissions: ["siem.view", "rule.view", "rule.review", "rule.enable", "soc.view", "action.approve", "audit.view"],
+    description: "Independent approval of action requests, rule promotion to enabled, and case evidence review — the second-set-of-eyes function.",
+    permissions: ["siem.view", "rule.view", "rule.review", "rule.enable", "soc.view", "action.approve", "evidence.review", "audit.view"],
   },
   soc_manager: {
     id: "soc_manager",

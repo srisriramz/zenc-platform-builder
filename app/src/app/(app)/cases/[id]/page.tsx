@@ -54,7 +54,7 @@ export default function CaseDetailPage() {
   const {
     case: c, allowed_transitions, can_close, linkedAlerts, techniqueBreakdown, triage, agentRuns,
     evidence, tasks, task_sla, enrichment, advisor, timeline, latency, caseWorkers, canReviewEvidence,
-    responsePlan, actionRequests, can_plan_response, can_request_action,
+    responsePlan, actionRequests, can_plan_response, can_request_action, kill_switch_scope,
   } = q.data;
   const needsReason = classification === "suppressed";
   const triageRunId = agentRuns.find((r) => r.agent_run_id.startsWith("run-triage"))?.agent_run_id;
@@ -227,6 +227,7 @@ export default function CaseDetailPage() {
               canPlan={can_plan_response}
               canRequest={can_request_action}
               canWork={canWork}
+              killSwitchScope={kill_switch_scope}
             />
           )}
 

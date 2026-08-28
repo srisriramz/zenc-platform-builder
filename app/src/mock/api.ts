@@ -1186,6 +1186,7 @@ export async function fetchCaseDetail(ctx: SessionContext, caseId: string) {
     orchestration,
     can_plan_response: can(ctx, "case.work") && theCase.status !== "closed",
     can_request_action: can(ctx, "action.request"),
+    kill_switch_scope: engagedKillSwitchScope(ctx.tenantId),
     linkedAlerts,
     techniqueBreakdown: [...byTechnique.values()],
     candidate,
@@ -2018,6 +2019,29 @@ function killSwitchGateFor(tenantId: string): { global: boolean; partner: boolea
   };
 }
 
+/** which scope (if any) is halting the response pipeline for a tenant */
+function engagedKillSwitchScope(tenantId: string): "global" | "partner" | "tenant" | null {
+  const g = killSwitchGateFor(tenantId);
+  return g.global ? "global" : g.partner ? "partner" : g.tenant ? "tenant" : null;
+}
+
+/**
+ * A kill switch freezes the whole response pipeline for its scope — no new
+ * plans, no new action requests, no approvals, and (in the executor) no
+ * execution of anything already approved (agentic-architecture.md,
+ * review-agent-safety.md "Kill switch"). Denials are still allowed.
+ */
+function assertResponsePipelineOpen(tenantId: string): void {
+  const scope = engagedKillSwitchScope(tenantId);
+  if (scope) {
+    const reason = killSwitchGateFor(tenantId).engaged_reason;
+    throw new AccessError(
+      "permission_denied",
+      `The ${scope} kill switch is engaged${reason ? ` (${reason})` : ""} — the response pipeline is frozen for this scope. Disarm it to plan, request, approve, or execute actions.`,
+    );
+  }
+}
+
 export async function fetchKillSwitches(ctx: SessionContext) {
   await gate("kill-switches", 90);
   if (!can(ctx, "admin.policy") && !can(ctx, "soc.view") && !can(ctx, "audit.view")) assertCan(ctx, "soc.view");
@@ -2146,8 +2170,10 @@ export async function planCaseResponse(ctx: SessionContext, caseId: string) {
   await gate("plan-response", 500);
   assertEntitlement(ctx, "has_soc");
   assertCan(ctx, "case.work");
+  assertResponsePipelineOpen(ctx.tenantId);
   const theCase = getMergedCase(ctx.tenantId, caseId);
   if (!theCase) throw new AccessError("permission_denied", "No such case.");
+  if (theCase.status === "closed") throw new AccessError("permission_denied", "The case is closed — reopen it to plan a response.");
   const linked = socAlertsFor(ctx.tenantId).filter((a) => theCase.linked_alert_ids.includes(a.envelope_id));
   const enabled = mergedPlaybooks(ctx.tenantId).filter((p) => p.lifecycle_state === "enabled");
   const plan = planResponse(theCase, linked, enabled, approvalPolicyFor(ctx.tenantId));
@@ -2243,8 +2269,10 @@ export async function requestAction(ctx: SessionContext, input: RequestActionInp
   await gate("request-action", 160);
   assertEntitlement(ctx, "has_soc");
   assertCan(ctx, "action.request");
+  assertResponsePipelineOpen(ctx.tenantId);
   const theCase = getMergedCase(ctx.tenantId, input.case_id);
   if (!theCase) throw new AccessError("permission_denied", "No such case.");
+  if (theCase.status === "closed") throw new AccessError("permission_denied", "The case is closed — no new actions can be requested on it.");
 
   const now = DEMO_NOW_ISO;
   const id = `areq-u-${(hashString(`${input.case_id}:${input.action_type}:${now}:${getSession().actionRequests.length}`) >>> 0).toString(36)}`;
@@ -2297,13 +2325,19 @@ export async function fetchApprovalQueue(ctx: SessionContext) {
     const myCheck = canApprove(r, { principal_id: ctx.userId, permissions: permissionsFor(ctx) }, { underlyingPlaybookAuthor: pbAuthor });
     return { request: r, requirement, can_i_approve: myCheck.ok, block_reason: myCheck.ok ? null : myCheck.message };
   });
-  return { rows, can_approve: can(ctx, "action.approve") };
+  const scope = engagedKillSwitchScope(ctx.tenantId);
+  return {
+    rows,
+    can_approve: can(ctx, "action.approve"),
+    kill_switch: scope ? { scope, reason: killSwitchGateFor(ctx.tenantId).engaged_reason ?? null } : null,
+  };
 }
 
 export async function approveAction(ctx: SessionContext, id: string) {
   await gate("approve-action", 160);
   assertEntitlement(ctx, "has_soc");
   assertCan(ctx, "action.approve");
+  assertResponsePipelineOpen(ctx.tenantId);
   const r = getMergedActionRequest(ctx.tenantId, id);
   if (!r) throw new AccessError("permission_denied", "No such action request.");
   const pbAuthor = r.playbook_id ? getMergedPlaybook(ctx.tenantId, r.playbook_id)?.proposed_by : undefined;

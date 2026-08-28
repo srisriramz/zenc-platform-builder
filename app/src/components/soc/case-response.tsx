@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowUpRight, Bot, CheckCircle2, Play, ShieldQuestion, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, Bot, CheckCircle2, Play, ShieldAlert, ShieldQuestion, TriangleAlert } from "lucide-react";
 import type { ActionRequest } from "@/schemas";
 import type { ResponsePlan } from "@/lib/soc/response-planner";
 import { usePlanCaseResponse, useRequestAction, useExecuteAction, useCaseOrchestration } from "@/hooks/use-soc";
@@ -18,6 +18,7 @@ export function CaseResponse({
   canPlan,
   canRequest,
   canWork,
+  killSwitchScope,
 }: {
   caseId: string;
   plan: ResponsePlan | null;
@@ -25,6 +26,7 @@ export function CaseResponse({
   canPlan: boolean;
   canRequest: boolean;
   canWork: boolean;
+  killSwitchScope: "global" | "partner" | "tenant" | null;
 }) {
   const planMut = usePlanCaseResponse();
   const requestMut = useRequestAction();
@@ -35,6 +37,16 @@ export function CaseResponse({
 
   return (
     <div className="space-y-4">
+      {killSwitchScope && (
+        <div className="flex items-start gap-2 rounded-lg border border-[color-mix(in_oklch,var(--destructive)_45%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_9%,transparent)] p-3 text-sm" role="alert">
+          <ShieldAlert className="mt-0.5 size-4 flex-none text-[var(--destructive)]" />
+          <div>
+            <span className="font-medium text-foreground">The {killSwitchScope} kill switch is engaged. </span>
+            Planning, requesting, approving, and executing response actions are all blocked for this scope until it is disarmed.
+          </div>
+        </div>
+      )}
+
       {/* Supervisor summary */}
       {orch.data && (
         <Card>

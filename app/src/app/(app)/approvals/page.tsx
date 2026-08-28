@@ -47,6 +47,15 @@ export default function ApprovalsPage() {
         <LoadingState label="Loading queue…" />
       ) : (
         <>
+          {d.kill_switch && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-[color-mix(in_oklch,var(--destructive)_45%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_9%,transparent)] p-3 text-sm" role="alert">
+              <ShieldAlert className="mt-0.5 size-4 flex-none text-[var(--destructive)]" />
+              <div>
+                <span className="font-medium text-foreground">The {d.kill_switch.scope} kill switch is engaged. </span>
+                The response pipeline is frozen — approvals and execution are blocked{d.kill_switch.reason ? ` (${d.kill_switch.reason})` : ""}. Disarm it on Policies &amp; Kill Switches to resume.
+              </div>
+            </div>
+          )}
           <StatGrid>
             <StatTile label="Pending" value={rows.length} tone={rows.length ? "primary" : "success"} />
             <StatTile label="A2 · reversible" value={byClass("A2")} />

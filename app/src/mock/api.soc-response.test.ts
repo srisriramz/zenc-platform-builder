@@ -75,4 +75,10 @@ describe("kill switch freezes the whole response pipeline (fix M3)", () => {
       api.requestAction(analyst, { case_id: closed.case_id, action_class: "A2", action_type: "create_task" }),
     ).rejects.toThrow(/closed/i);
   });
+
+  it("fetchCaseOrchestration rejects an unknown / other-tenant case (fix S4)", async () => {
+    await expect(api.fetchCaseOrchestration(analyst, "case-does-not-exist")).rejects.toThrow(/no such case/i);
+    const summitCase = getStore().cases.find((c) => c.tenant_id === "tenant-summit-cu")!;
+    await expect(api.fetchCaseOrchestration(analyst, summitCase.case_id)).rejects.toThrow(/no such case/i);
+  });
 });

@@ -2515,6 +2515,7 @@ export async function fetchCaseOrchestration(ctx: SessionContext, caseId: string
   await gate("orchestration", 120);
   assertEntitlement(ctx, "has_soc");
   assertCan(ctx, "soc.view");
+  if (!getMergedCase(ctx.tenantId, caseId)) throw new AccessError("permission_denied", "No such case in this tenant.");
   const runs = [...getSession().agentRuns, ...getStore().agentActivity.runs].filter(
     (r) => r.tenant_id === ctx.tenantId && r.case_id === caseId,
   );

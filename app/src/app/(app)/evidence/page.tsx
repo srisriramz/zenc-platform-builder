@@ -50,7 +50,7 @@ function EvidenceInner() {
     <>
       <PageHeader
         title="Evidence Review"
-        description="Case evidence uses the same chain-of-custody rigor as Assessment evidence: immutable once added, tamper-evident by content hash, and reviewed by a second person before it counts. One approve/reject pattern regardless of origin."
+        description="Case evidence follows the same chain-of-custody rules as Assessment evidence: not editable once added (corrections are new items that supersede the old), a content hash is recorded as a tamper-evidence marker, and a second person reviews it before it counts. One approve/reject pattern regardless of origin."
       />
 
       {q.isLoading || !d ? (

@@ -31,8 +31,8 @@ export function CaseEvidence({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          Immutable once added. A correction is a new item that supersedes the old one — never an edit. The content hash
-          is the tamper-evidence marker.
+          Not editable once added — a correction is a new item that supersedes the old one, never an edit. The content
+          hash is recorded as a tamper-evidence marker.
         </p>
         {canWork && (
           <Button size="sm" variant="outline" onClick={() => setAdding((v) => !v)}>

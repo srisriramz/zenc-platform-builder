@@ -9,7 +9,7 @@ import { formatRelative } from "@/lib/time";
 import { AGENT_MAP } from "@/data/agents";
 import { PageHeader } from "@/components/shell/page-header";
 import { StatGrid, StatTile } from "@/components/stat-tile";
-import { Card, CardContent, Input } from "@/components/ui/primitives";
+import { Badge, Card, CardContent, Input } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { ActionClassBadge } from "@/components/domain-badges";
 import { EntitlementMissingState, LoadingState, QueryErrorState } from "@/components/states";
@@ -101,7 +101,10 @@ function ApprovalRow({ row, canApprove, nameOf }: { row: Row; canApprove: boolea
             </p>
             <p className="mt-0.5 text-sm text-muted-foreground">{r.summary}</p>
           </div>
-          <ActionClassBadge actionClass={r.action_class} />
+          <span className="flex items-center gap-1.5">
+            {row.stale && <Badge variant="warning">stale · pending {row.pending_hours}h</Badge>}
+            <ActionClassBadge actionClass={r.action_class} />
+          </span>
         </div>
 
         <p className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">

@@ -2019,6 +2019,9 @@ function killSwitchGateFor(tenantId: string): { global: boolean; partner: boolea
   };
 }
 
+/** a pending approval older than this is flagged as stale (not auto-expired) */
+const STALE_PENDING_HOURS = 48;
+
 /** which scope (if any) is halting the response pipeline for a tenant */
 function engagedKillSwitchScope(tenantId: string): "global" | "partner" | "tenant" | null {
   const g = killSwitchGateFor(tenantId);
@@ -2323,7 +2326,17 @@ export async function fetchApprovalQueue(ctx: SessionContext) {
     const requirement = approvalRequirement(r, approvalPolicyFor(ctx.tenantId));
     const pbAuthor = r.playbook_id ? getMergedPlaybook(ctx.tenantId, r.playbook_id)?.proposed_by : undefined;
     const myCheck = canApprove(r, { principal_id: ctx.userId, permissions: permissionsFor(ctx) }, { underlyingPlaybookAuthor: pbAuthor });
-    return { request: r, requirement, can_i_approve: myCheck.ok, block_reason: myCheck.ok ? null : myCheck.message };
+    // a request left pending for a long time — not auto-expired (someone still
+    // owes a decision), just surfaced so it doesn't rot in the queue unseen
+    const pendingHours = r.requested_at ? secondsBetween(r.requested_at, DEMO_NOW_ISO) / 3600 : 0;
+    return {
+      request: r,
+      requirement,
+      can_i_approve: myCheck.ok,
+      block_reason: myCheck.ok ? null : myCheck.message,
+      stale: pendingHours >= STALE_PENDING_HOURS,
+      pending_hours: Math.round(pendingHours),
+    };
   });
   const scope = engagedKillSwitchScope(ctx.tenantId);
   return {

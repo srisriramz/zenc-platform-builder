@@ -43,6 +43,11 @@
       }
     },
     "created_at": { "type": "string", "format": "date-time" },
+    "triaged_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When triage completed and the case moved off 'new'. The SOC-ack stage of the pipeline-latency breakdown."
+    },
     "closed_at": { "type": "string", "format": "date-time" },
     "closure": {
       "type": "object",

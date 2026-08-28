@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/primitives";
-import type { HealthState, Severity } from "@/schemas";
+import type { CaseStatus, HealthState, Severity } from "@/schemas";
 import type { RuleLifecycleState } from "@/schemas";
 
 const SEV_STYLE: Record<Severity, string> = {
@@ -47,6 +47,39 @@ export function LifecycleBadge({ state, className }: { state: RuleLifecycleState
   return (
     <Badge variant={LIFECYCLE_STYLE[state]} className={cn("capitalize", className)}>
       {state.replace("_", " ")}
+    </Badge>
+  );
+}
+
+const CASE_STATUS_STYLE: Record<CaseStatus, Parameters<typeof Badge>[0]["variant"]> = {
+  new: "info",
+  triaged: "primary",
+  investigating: "warning",
+  contained: "primary",
+  recovering: "info",
+  closed: "outline",
+  reopened: "warning",
+};
+
+export function CaseStatusBadge({ status, className }: { status: CaseStatus; className?: string }) {
+  return (
+    <Badge variant={CASE_STATUS_STYLE[status]} className={cn("capitalize", className)}>
+      {status}
+    </Badge>
+  );
+}
+
+const SLA_STYLE: Record<string, { variant: Parameters<typeof Badge>[0]["variant"]; label: string }> = {
+  on_track: { variant: "success", label: "On track" },
+  at_risk: { variant: "warning", label: "At risk" },
+  breached: { variant: "danger", label: "Breached" },
+};
+
+export function SlaBadge({ status, className }: { status: "on_track" | "at_risk" | "breached"; className?: string }) {
+  const s = SLA_STYLE[status];
+  return (
+    <Badge variant={s.variant} className={className}>
+      {s.label}
     </Badge>
   );
 }

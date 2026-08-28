@@ -49,9 +49,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/coverage", label: "ATT&CK × D3FEND Coverage", section: "SIEM", product: "siem", icon: Boxes, requires: "has_siem", permission: "siem.view", milestone: "M5" },
 
   // ---- SOAR (Respond product; internal key stays "soc") ----
-  { href: "/soc-dashboard", label: "SOAR Dashboard", section: "SOAR", product: "soc", icon: Gauge, requires: "has_soc", permission: "soc.view", milestone: "M4" },
-  { href: "/alerts", label: "Alert Intake", section: "SOAR", product: "soc", icon: Siren, requires: "has_soc", permission: "soc.view", milestone: "M4" },
-  { href: "/cases", label: "Cases", section: "SOAR", product: "soc", icon: BriefcaseBusiness, requires: "has_soc", permission: "case.work", milestone: "M4" },
+  { href: "/soc-dashboard", label: "SOAR Dashboard", section: "SOAR", product: "soc", icon: Gauge, requires: "has_soc", permission: "soc.view" },
+  { href: "/alerts", label: "Alert Intake", section: "SOAR", product: "soc", icon: Siren, requires: "has_soc", permission: "soc.view" },
+  { href: "/cases", label: "Cases", section: "SOAR", product: "soc", icon: BriefcaseBusiness, requires: "has_soc", permission: "soc.view" },
   { href: "/agents", label: "Agents", section: "SOAR", product: "soc", icon: Workflow, requires: "has_soc", permission: "soc.view" },
   { href: "/agents/runs", label: "Agent Runs", section: "SOAR", product: "soc", icon: Waypoints, requires: "has_soc", permission: "soc.view" },
   { href: "/approvals", label: "Approval Queue", section: "SOAR", product: "soc", icon: BadgeCheck, requires: "has_soc", permission: "soc.view", milestone: "M4" },

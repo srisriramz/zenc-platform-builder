@@ -5,7 +5,7 @@
  * when the module reloads (a page reload, or `resetSession()`), which is the
  * demo's "reset" behaviour.
  */
-import type { AgentMessage, AgentRun, AuditEvent, RegressionTestResult, RuleLifecycleState } from "@/schemas";
+import type { AgentMessage, AgentRun, AuditEvent, Case, CaseStatus, RegressionTestResult, RuleLifecycleState } from "@/schemas";
 import type { SeededRule } from "@/data/correlation-rules";
 
 export interface RuleOverride {
@@ -17,19 +17,53 @@ export interface RuleOverride {
   disabled_reason?: string;
 }
 
+export interface CaseOverride {
+  status?: CaseStatus;
+  owner_id?: string;
+  triaged_at?: string;
+  closed_at?: string;
+  closure?: Case["closure"];
+  agent_run_ids?: string[];
+}
+
+/** a human's confirm-open / suppress decision on a pending intake candidate */
+export interface IntakeDecision {
+  candidate_id: string;
+  decision: "opened" | "suppressed";
+  by: string;
+  at: string;
+  reason?: string;
+  case_id?: string;
+}
+
 interface SessionState {
   ruleOverrides: Map<string, RuleOverride>;
   proposedRules: SeededRule[];
   agentRuns: AgentRun[];
   agentMessages: AgentMessage[];
   audit: AuditEvent[];
+  /** cases created during the demo by confirming an intake candidate */
+  openedCases: Case[];
+  /** mutations to seeded or opened cases (status, owner, closure) */
+  caseOverrides: Map<string, CaseOverride>;
+  /** decisions on pending intake candidates, keyed by candidate_id */
+  intakeDecisions: Map<string, IntakeDecision>;
 }
 
 let _state: SessionState = fresh();
 let _auditSeq = 0;
 
 function fresh(): SessionState {
-  return { ruleOverrides: new Map(), proposedRules: [], agentRuns: [], agentMessages: [], audit: [] };
+  return {
+    ruleOverrides: new Map(),
+    proposedRules: [],
+    agentRuns: [],
+    agentMessages: [],
+    audit: [],
+    openedCases: [],
+    caseOverrides: new Map(),
+    intakeDecisions: new Map(),
+  };
 }
 
 export function appendAudit(entry: Omit<AuditEvent, "audit_id">): void {
@@ -67,4 +101,19 @@ export function addAgentRun(run: AgentRun, messages: AgentMessage[]): void {
 export function updateAgentRun(runId: string, patch: Partial<AgentRun>): void {
   const i = _state.agentRuns.findIndex((r) => r.agent_run_id === runId);
   if (i >= 0) _state.agentRuns[i] = { ..._state.agentRuns[i], ...patch };
+}
+
+// ---- SOAR: intake decisions + case mutations ----------------------------
+
+export function recordIntakeDecision(decision: IntakeDecision): void {
+  _state.intakeDecisions.set(decision.candidate_id, decision);
+}
+
+export function addOpenedCase(c: Case): void {
+  _state.openedCases.push(c);
+}
+
+export function upsertCaseOverride(caseId: string, patch: CaseOverride): void {
+  const prev = _state.caseOverrides.get(caseId) ?? {};
+  _state.caseOverrides.set(caseId, { ...prev, ...patch });
 }

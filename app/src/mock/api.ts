@@ -10,11 +10,14 @@
 import { getStore } from "./store";
 import {
   addAgentRun,
+  addOpenedCase,
   addProposedRule,
   appendAudit,
   getSession,
+  recordIntakeDecision,
   updateAgentRun,
   updateProposedRule,
+  upsertCaseOverride,
   upsertRuleOverride,
 } from "./session-store";
 import { AccessError, assertCan, assertEntitlement, can, permissionsFor, roleInTenant, type SessionContext } from "./rbac";
@@ -26,18 +29,24 @@ import { runCorrelation, type CorrelationContext } from "@/lib/correlation/engin
 import { CORRELATION_RULES, type SeededRule } from "@/data/correlation-rules";
 import { AGENTS } from "@/data/agents";
 import { ATTACK_TECHNIQUE_MAP } from "@/data/frameworks/attack";
-import { TENANT_MAP } from "@/data/platform";
+import { ROLES, TENANT_MAP } from "@/data/platform";
 import { dailyVolumeSeries } from "@/data/ingestion-profile";
-import { DEMO_NOW_ISO } from "@/lib/time";
+import { DEMO_NOW_ISO, minus, secondsBetween } from "@/lib/time";
 import type {
   AgentMessage,
   AlertEnvelope,
   AnalystFeedback,
+  Case,
+  CaseStatus,
+  ClosureClassification,
   CorrelationRule,
   NormalizedEvent,
   RuleLifecycleState,
 } from "@/schemas";
+import { caseSchema } from "@/schemas";
 import type { RuleDefinition } from "@/lib/correlation/types";
+import type { CaseCandidate, IntakeItem, TriageResult } from "@/lib/soc/types";
+import { caseIdFor } from "@/data/soc-seed";
 
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
 
@@ -850,4 +859,469 @@ export async function fetchEventLineage(ctx: SessionContext, eventId: string) {
     .sort((a, b) => Math.abs(Date.parse(a.occurred_at) - Date.parse(event.occurred_at)) - Math.abs(Date.parse(b.occurred_at) - Date.parse(event.occurred_at)))
     .slice(0, 8);
   return { event, raw, related };
+}
+
+// ---------------------------------------------------------------------------
+// M4a — SOAR intake & triage
+// ---------------------------------------------------------------------------
+
+const CASE_SLA_HOURS: Record<string, number> = { critical: 4, high: 8, medium: 24, low: 72, informational: 72 };
+
+function slaForCase(severity: string | undefined, createdAtIso: string): NonNullable<Case["sla"]> {
+  const hours = CASE_SLA_HOURS[severity ?? "medium"] ?? 24;
+  const dueAt = minus(createdAtIso, { hours: -hours });
+  const remaining = secondsBetween(DEMO_NOW_ISO, dueAt);
+  const total = hours * 3600;
+  return { due_at: dueAt, status: remaining <= 0 ? "breached" : remaining < total * 0.25 ? "at_risk" : "on_track" };
+}
+
+/** seed cases ∪ session-opened cases, with session overrides applied — tenant-scoped */
+function mergedCases(tenantId: string): Case[] {
+  const session = getSession();
+  const all = [
+    ...getStore().cases.filter((c) => c.tenant_id === tenantId),
+    ...session.openedCases.filter((c) => c.tenant_id === tenantId),
+  ];
+  return all.map((c) => {
+    const o = session.caseOverrides.get(c.case_id);
+    if (!o) return c;
+    return {
+      ...c,
+      status: o.status ?? c.status,
+      owner_id: o.owner_id ?? c.owner_id,
+      triaged_at: o.triaged_at ?? c.triaged_at,
+      closed_at: o.closed_at ?? c.closed_at,
+      closure: o.closure ?? c.closure,
+      agent_run_ids: o.agent_run_ids ?? c.agent_run_ids,
+    };
+  });
+}
+
+function getMergedCase(tenantId: string, caseId: string): Case | undefined {
+  return mergedCases(tenantId).find((c) => c.case_id === caseId);
+}
+
+function socAlertsFor(tenantId: string): AlertEnvelope[] {
+  return getStore().socAlerts.filter((a) => a.tenant_id === tenantId);
+}
+
+function caseWorkersFor(tenantId: string): { user_id: string; display_name: string }[] {
+  return getStore()
+    .users.filter((u) =>
+      u.roles.some((r) => r.tenant_id === tenantId && ROLES[r.role].permissions.includes("case.work")),
+    )
+    .map((u) => ({ user_id: u.user_id, display_name: u.display_name }));
+}
+
+export interface IntakeQueueRow {
+  candidate: CaseCandidate;
+  alerts: AlertEnvelope[];
+  triage: TriageResult | null;
+  decision: "opened" | "suppressed" | null;
+  decided_by?: string;
+  decided_at?: string;
+  suppress_reason?: string;
+  case_id: string | null;
+}
+
+export interface IntakeQueueResponse {
+  pending: IntakeQueueRow[];
+  actioned: IntakeQueueRow[];
+  rejected: IntakeItem[];
+  counts: {
+    received: number;
+    accepted: number;
+    quarantined: number;
+    duplicate: number;
+    pending: number;
+    opened: number;
+    suppressed: number;
+  };
+}
+
+export async function fetchIntakeQueue(ctx: SessionContext): Promise<IntakeQueueResponse> {
+  await gate("intake-queue", 200);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "soc.view");
+  const store = getStore();
+  const session = getSession();
+
+  const items = store.intakeItems.filter((i) => i.tenant_id === ctx.tenantId);
+  const candidates = store.caseCandidates.filter((c) => c.tenant_id === ctx.tenantId);
+  const alertById = new Map(socAlertsFor(ctx.tenantId).map((a) => [a.envelope_id, a] as const));
+  const triageById = new Map(store.triageResults.map((t) => [t.candidate_id, t] as const));
+
+  const rows: IntakeQueueRow[] = candidates.map((candidate) => {
+    const seededCaseId = store.candidateCaseId[candidate.candidate_id] ?? null;
+    const decision = session.intakeDecisions.get(candidate.candidate_id);
+    return {
+      candidate,
+      alerts: candidate.envelope_ids.map((id) => alertById.get(id)).filter(Boolean) as AlertEnvelope[],
+      triage: triageById.get(candidate.candidate_id) ?? null,
+      decision: seededCaseId ? "opened" : decision?.decision ?? null,
+      decided_by: decision?.by,
+      decided_at: decision?.at,
+      suppress_reason: decision?.reason,
+      case_id: seededCaseId ?? decision?.case_id ?? null,
+    };
+  });
+
+  const pending = rows
+    .filter((r) => r.decision === null)
+    .sort((a, b) => Date.parse(b.candidate.last_occurred_at) - Date.parse(a.candidate.last_occurred_at));
+  const actioned = rows
+    .filter((r) => r.decision !== null)
+    .sort((a, b) => Date.parse(b.candidate.last_occurred_at) - Date.parse(a.candidate.last_occurred_at));
+
+  return {
+    pending,
+    actioned,
+    rejected: items.filter((i) => i.disposition !== "accepted"),
+    counts: {
+      received: items.length,
+      accepted: items.filter((i) => i.disposition === "accepted").length,
+      quarantined: items.filter((i) => i.disposition === "quarantined").length,
+      duplicate: items.filter((i) => i.disposition === "duplicate").length,
+      pending: pending.length,
+      opened: rows.filter((r) => r.decision === "opened").length,
+      suppressed: rows.filter((r) => r.decision === "suppressed").length,
+    },
+  };
+}
+
+export interface CaseFilter {
+  status?: string;
+  severity?: string;
+  owner?: string;
+}
+
+export async function fetchCases(ctx: SessionContext, filter: CaseFilter = {}): Promise<Case[]> {
+  await gate("cases", 200);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "soc.view");
+  let cases = mergedCases(ctx.tenantId);
+  if (filter.status) cases = cases.filter((c) => c.status === filter.status);
+  if (filter.severity) cases = cases.filter((c) => c.severity === filter.severity);
+  if (filter.owner) cases = cases.filter((c) => c.owner_id === filter.owner);
+  return cases.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+}
+
+export interface CaseTechniqueBreakdown {
+  technique_id: string;
+  technique_name: string;
+  tactic: string;
+  /** refs that resolve to a ZenC normalized event (native alerts) */
+  traceable_refs: { ref: string; event_type?: string; occurred_at?: string }[];
+  /** count of opaque source-provided refs (third-party alerts) */
+  source_provided_ref_count: number;
+}
+
+export async function fetchCaseDetail(ctx: SessionContext, caseId: string) {
+  await gate("case-detail", 220);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "soc.view");
+  const store = getStore();
+  const theCase = getMergedCase(ctx.tenantId, caseId);
+  if (!theCase) throw new AccessError("permission_denied", "No such case in this tenant.");
+
+  const alertById = new Map(socAlertsFor(ctx.tenantId).map((a) => [a.envelope_id, a] as const));
+  const linkedAlerts = theCase.linked_alert_ids.map((id) => alertById.get(id)).filter(Boolean) as AlertEnvelope[];
+
+  const eventById = new Map(store.normalizedEvents.filter((e) => e.tenant_id === ctx.tenantId).map((e) => [e.event_id, e] as const));
+  const byTechnique = new Map<string, CaseTechniqueBreakdown>();
+  for (const alert of linkedAlerts) {
+    for (const t of alert.attack_techniques ?? []) {
+      const entry =
+        byTechnique.get(t.technique_id) ??
+        { technique_id: t.technique_id, technique_name: t.technique_name, tactic: t.tactic, traceable_refs: [], source_provided_ref_count: 0 };
+      for (const ref of t.contributing_event_refs) {
+        const ev = eventById.get(ref);
+        if (ev) entry.traceable_refs.push({ ref, event_type: ev.event_type, occurred_at: ev.occurred_at });
+        else entry.source_provided_ref_count++;
+      }
+      byTechnique.set(t.technique_id, entry);
+    }
+  }
+
+  // candidate + triage: reverse-lookup from the seed map and session decisions
+  const seededPair = Object.entries(store.candidateCaseId).find(([, cid]) => cid === caseId);
+  const sessionPair = [...getSession().intakeDecisions.values()].find((d) => d.case_id === caseId);
+  const candidateId = seededPair?.[0] ?? sessionPair?.candidate_id ?? null;
+  const candidate = candidateId ? store.caseCandidates.find((c) => c.candidate_id === candidateId) ?? null : null;
+  const triage = candidateId ? store.triageResults.find((t) => t.candidate_id === candidateId) ?? null : null;
+
+  const agentRuns = [...getSession().agentRuns, ...store.agentActivity.runs].filter(
+    (r) => r.tenant_id === ctx.tenantId && (r.case_id === caseId || (candidateId != null && r.case_id === candidateId)),
+  );
+
+  const firstReceived = linkedAlerts
+    .map((a) => a.received_at)
+    .filter(Boolean)
+    .sort()[0];
+
+  return {
+    case: theCase,
+    allowed_transitions: theCase.status === "closed" ? (["reopened"] as CaseStatus[]) : CASE_TRANSITIONS[theCase.status] ?? [],
+    can_close: theCase.status !== "closed" && theCase.status !== "new",
+    linkedAlerts,
+    techniqueBreakdown: [...byTechnique.values()],
+    candidate,
+    triage,
+    agentRuns,
+    latency: {
+      received_at: firstReceived ?? null,
+      ack_seconds: theCase.triaged_at && firstReceived ? secondsBetween(firstReceived, theCase.triaged_at) : null,
+      resolve_seconds: theCase.closed_at ? secondsBetween(theCase.created_at, theCase.closed_at) : null,
+    },
+    caseWorkers: caseWorkersFor(ctx.tenantId),
+  };
+}
+
+export async function fetchSocDashboard(ctx: SessionContext) {
+  await gate("soc-dashboard", 240);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "soc.view");
+  const store = getStore();
+  const cases = mergedCases(ctx.tenantId);
+  const items = store.intakeItems.filter((i) => i.tenant_id === ctx.tenantId);
+  const candidates = store.caseCandidates.filter((c) => c.tenant_id === ctx.tenantId);
+  const decisions = getSession().intakeDecisions;
+  const pendingCandidates = candidates.filter(
+    (c) => !store.candidateCaseId[c.candidate_id] && !decisions.has(c.candidate_id),
+  );
+
+  const open = cases.filter((c) => c.status !== "closed");
+  const closed = cases.filter((c) => c.status === "closed");
+  const byStatus: Record<string, number> = {};
+  for (const c of open) byStatus[c.status] = (byStatus[c.status] ?? 0) + 1;
+  const bySeverity: Record<string, number> = {};
+  for (const c of open) bySeverity[c.severity ?? "unknown"] = (bySeverity[c.severity ?? "unknown"] ?? 0) + 1;
+  const closureMix: Record<string, number> = {};
+  for (const c of closed) if (c.closure) closureMix[c.closure.classification] = (closureMix[c.closure.classification] ?? 0) + 1;
+
+  const sla = { on_track: 0, at_risk: 0, breached: 0 };
+  for (const c of open) {
+    const s = c.sla?.status ?? slaForCase(c.severity, c.created_at).status ?? "on_track";
+    sla[s]++;
+  }
+
+  const alerts = socAlertsFor(ctx.tenantId);
+  const mttd = avg(
+    alerts.filter((a) => a.correlated_at).map((a) => secondsBetween(a.occurred_at, a.correlated_at!)),
+  );
+  const mttrResolve = avg(closed.map((c) => secondsBetween(c.created_at, c.closed_at!)));
+  const mtta = avg(
+    cases.filter((c) => c.triaged_at).map((c) => secondsBetween(c.created_at, c.triaged_at!)),
+  );
+
+  return {
+    demoNowIso: store.demoNowIso,
+    intake: {
+      received: items.length,
+      accepted: items.filter((i) => i.disposition === "accepted").length,
+      quarantined: items.filter((i) => i.disposition === "quarantined").length,
+      duplicate: items.filter((i) => i.disposition === "duplicate").length,
+      pending_triage: pendingCandidates.length,
+    },
+    cases: {
+      open: open.length,
+      closed: closed.length,
+      byStatus,
+      bySeverity,
+      closureMix,
+      unowned: open.filter((c) => !c.owner_id).length,
+    },
+    sla,
+    latency: {
+      mttd_seconds: mttd,
+      mtta_seconds: mtta,
+      mttr_seconds: mttrResolve,
+    },
+    recentCases: cases.slice().sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 6),
+  };
+}
+
+function avg(xs: number[]): number | null {
+  return xs.length ? Math.round(xs.reduce((s, n) => s + n, 0) / xs.length) : null;
+}
+
+// ---- mutations ---------------------------------------------------------------
+
+function requireCandidate(ctx: SessionContext, candidateId: string): CaseCandidate {
+  const candidate = getStore().caseCandidates.find(
+    (c) => c.candidate_id === candidateId && c.tenant_id === ctx.tenantId,
+  );
+  if (!candidate) throw new AccessError("permission_denied", "No such intake candidate in this tenant.");
+  return candidate;
+}
+
+function alreadyDecided(candidateId: string): boolean {
+  return !!getStore().candidateCaseId[candidateId] || getSession().intakeDecisions.has(candidateId);
+}
+
+export async function confirmCaseOpen(ctx: SessionContext, candidateId: string): Promise<{ case_id: string }> {
+  await gate("confirm-case-open", 160);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const candidate = requireCandidate(ctx, candidateId);
+  if (alreadyDecided(candidateId)) throw new AccessError("permission_denied", "This intake item has already been actioned.");
+
+  const triage = getStore().triageResults.find((t) => t.candidate_id === candidateId);
+  const now = DEMO_NOW_ISO;
+  const caseId = caseIdFor(ctx.tenantId, candidateId);
+  const severity = triage?.recommended_severity ?? candidate.max_severity;
+  const owner = triage?.recommended_owner_id ?? ctx.userId;
+  const title =
+    socAlertsFor(ctx.tenantId).find((a) => a.envelope_id === candidate.envelope_ids[0])?.title ?? "Investigation";
+
+  const newCase: Case = caseSchema.parse({
+    case_id: caseId,
+    tenant_id: ctx.tenantId,
+    title,
+    status: "triaged",
+    severity,
+    owner_id: owner,
+    linked_alert_ids: candidate.envelope_ids,
+    agent_run_ids: [`run-triage-${candidateId}`],
+    sla: slaForCase(severity, now),
+    created_at: now,
+    triaged_at: now,
+  });
+
+  addOpenedCase(newCase);
+  recordIntakeDecision({ candidate_id: candidateId, decision: "opened", by: ctx.userId, at: now, case_id: caseId });
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "case_created",
+    target_type: "case",
+    target_id: caseId,
+    detail: `Opened from intake candidate ${candidateId} (triage recommended "${triage?.recommendation ?? "open"}") — ${candidate.envelope_ids.length} alert(s), ${severity}`,
+  });
+  return { case_id: caseId };
+}
+
+export async function suppressCandidate(ctx: SessionContext, candidateId: string, reason: string) {
+  await gate("suppress-candidate", 140);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  requireCandidate(ctx, candidateId);
+  if (alreadyDecided(candidateId)) throw new AccessError("permission_denied", "This intake item has already been actioned.");
+  if (!reason.trim()) throw new AccessError("permission_denied", "A suppression needs a documented reason.");
+
+  const now = DEMO_NOW_ISO;
+  recordIntakeDecision({ candidate_id: candidateId, decision: "suppressed", by: ctx.userId, at: now, reason: reason.trim() });
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "alert_suppressed",
+    target_type: "alert",
+    target_id: candidateId,
+    detail: `Suppressed intake candidate ${candidateId} — "${reason.trim()}"`,
+  });
+  return { ok: true };
+}
+
+const CASE_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
+  new: ["triaged"],
+  triaged: ["investigating", "new"],
+  investigating: ["contained", "triaged"],
+  contained: ["recovering", "investigating"],
+  recovering: ["investigating"],
+  closed: ["reopened"],
+  reopened: ["investigating", "closed"],
+};
+
+export async function setCaseStatus(ctx: SessionContext, caseId: string, to: CaseStatus, note?: string) {
+  await gate("set-case-status", 150);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const theCase = getMergedCase(ctx.tenantId, caseId);
+  if (!theCase) throw new AccessError("permission_denied", "No such case.");
+  if (to === "closed") throw new AccessError("permission_denied", "Close a case through closeCase — a closure classification is required.");
+  if (!(CASE_TRANSITIONS[theCase.status] ?? []).includes(to)) {
+    throw new AccessError("permission_denied", `A ${theCase.status} case cannot move to ${to}.`);
+  }
+  const now = DEMO_NOW_ISO;
+  const patch: Parameters<typeof upsertCaseOverride>[1] = { status: to };
+  if (!theCase.triaged_at && to !== "new") patch.triaged_at = now;
+  if (theCase.status === "closed" && to === "reopened") {
+    patch.closed_at = undefined;
+    patch.closure = undefined;
+  }
+  upsertCaseOverride(caseId, patch);
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "case_status_changed",
+    target_type: "case",
+    target_id: caseId,
+    detail: `${theCase.status} → ${to}${note ? ` (${note})` : ""}`,
+  });
+  return { status: to };
+}
+
+export async function assignCaseOwner(ctx: SessionContext, caseId: string, ownerId: string) {
+  await gate("assign-case-owner", 130);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const theCase = getMergedCase(ctx.tenantId, caseId);
+  if (!theCase) throw new AccessError("permission_denied", "No such case.");
+  if (!caseWorkersFor(ctx.tenantId).some((w) => w.user_id === ownerId)) {
+    throw new AccessError("permission_denied", "That user cannot own a case in this tenant.");
+  }
+  const now = DEMO_NOW_ISO;
+  upsertCaseOverride(caseId, { owner_id: ownerId });
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "case_status_changed",
+    target_type: "case",
+    target_id: caseId,
+    detail: `owner → ${ownerId}`,
+  });
+  return { owner_id: ownerId };
+}
+
+export async function closeCase(
+  ctx: SessionContext,
+  caseId: string,
+  classification: ClosureClassification,
+  reason?: string,
+) {
+  await gate("close-case", 160);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const theCase = getMergedCase(ctx.tenantId, caseId);
+  if (!theCase) throw new AccessError("permission_denied", "No such case.");
+  if (classification === "suppressed" && !reason?.trim()) {
+    throw new AccessError("permission_denied", "A suppressed closure needs a documented reason.");
+  }
+  const now = DEMO_NOW_ISO;
+  // validate the resulting case against the contract (the .refine guards fire here)
+  caseSchema.parse({
+    ...theCase,
+    status: "closed",
+    closed_at: now,
+    closure: { classification, reason: reason?.trim(), closed_by: ctx.userId },
+  });
+  upsertCaseOverride(caseId, {
+    status: "closed",
+    closed_at: now,
+    closure: { classification, reason: reason?.trim(), closed_by: ctx.userId },
+  });
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "case_status_changed",
+    target_type: "case",
+    target_id: caseId,
+    detail: `${theCase.status} → closed (${classification})`,
+  });
+  return { status: "closed" as const, classification };
 }

@@ -17,6 +17,8 @@ import { FAMILY_INGESTION_PROFILE, nominalEps } from "@/data/ingestion-profile";
 import { generateEvents } from "@/data/events";
 import { deriveEntityRisk } from "@/data/entity-risk";
 import { CORRELATION_RULES } from "@/data/correlation-rules";
+import { THIRD_PARTY_ALERTS } from "@/data/third-party-alerts";
+import { buildSocLayer } from "@/data/soc-seed";
 import { runCorrelation } from "@/lib/correlation/engine";
 import { ATTACK_TECHNIQUES, ATTACK_TACTICS } from "@/data/frameworks/attack";
 import { D3FEND_TECHNIQUES } from "@/data/frameworks/d3fend";
@@ -197,6 +199,12 @@ function assemble() {
   const alerts = firings.flatMap((f) => f.alerts).sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at));
   const ruleFireCounts = Object.fromEntries(firings.map((f) => [f.rule.rule_id, f.alerts.length]));
 
+  // SOAR intake & triage — runs over native alerts + the third-party fixtures,
+  // through the same intake → grouping → triage path a live system would use.
+  const socAlerts = [...alerts, ...THIRD_PARTY_ALERTS];
+  const soc = buildSocLayer(socAlerts);
+  const seededAgents = seedAgentActivity();
+
   return {
     demoNowIso: DEMO_NOW_ISO,
     partners: PARTNERS,
@@ -212,7 +220,18 @@ function assemble() {
     correlationRules: CORRELATION_RULES,
     alerts,
     ruleFireCounts,
-    agentActivity: seedAgentActivity(),
+    // everything the SOAR side can see: native alert-envelopes + third-party
+    thirdPartyAlerts: THIRD_PARTY_ALERTS,
+    socAlerts,
+    intakeItems: soc.intakeItems,
+    caseCandidates: soc.candidates,
+    triageResults: soc.triageResults,
+    cases: soc.cases,
+    candidateCaseId: soc.candidateCaseId,
+    agentActivity: {
+      runs: [...seededAgents.runs, ...soc.triageRuns],
+      messages: [...seededAgents.messages, ...soc.triageMessages],
+    },
     audit: seedAudit(),
     frameworks: {
       attackTactics: ATTACK_TACTICS,

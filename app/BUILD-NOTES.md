@@ -12,7 +12,9 @@ follow `templates/claude-code-bootstrap.md`.
 | **M1** | SIEM foundation: telemetry, normalization, Log Explorer | ✅ done |
 | **M2** | Correlation engine + ATT&CK-mapped rules → alert-envelope | ✅ done |
 | **M3** | Detection engineering workflow — Detection Engineer Agent, rule lifecycle, /agents | ✅ done |
-| M4 | ZenC SOC: intake → triage → response, 12 agents, approvals | not started |
+| **M4a** | SOAR intake & triage — envelope intake, dedup, grouping, Triage Agent, cases | ✅ done |
+| M4b | SOAR investigation — evidence + chain-of-custody, timeline, tasks/SLA, closure | not started |
+| M4c | SOAR response — playbooks, approval queue (no self-approval), dry-run executor, kill switches | not started |
 | M5 | ATT&CK × D3FEND coverage matrix + SOC reporting | not started |
 
 ## Stack
@@ -141,6 +143,62 @@ component API, no dependency on the CLI.
     analyst-feedback form.
 - 12 lifecycle-enforcement tests + v1.2 schema tests. **99 tests total.**
 
+## M4a — what's in
+
+- **Intake boundary** (`lib/soc/intake.ts`) — every inbound alert-envelope,
+  native or third-party, passes through `runIntake`. Version negotiation
+  first (supported: `1.1` + `1.2`), then full schema validation. A malformed
+  or unsupported envelope is **quarantined**, a repeat `dedupe_key` is kept
+  as a **duplicate** — nothing is ever dropped. The source health is tagged;
+  no other branch on `source.system`.
+- **Case grouping** (`lib/soc/grouping.ts`) — deterministic union-find. Two
+  accepted alerts group when they are within 12h AND share an entity AND the
+  link is a strong pivot (shared ATT&CK technique, or a shared user/host).
+  Order-independent; a lone alert is still a candidate.
+- **Triage Agent** (`lib/soc/triage.ts`) — a deterministic heuristic stands
+  in for the model, but the output is a real agent message (claim,
+  confidence, supporting + contradictory evidence) carrying an
+  **open-vs-suppress recommendation the agent cannot act on**. A human
+  confirms at L2 (`confirmCaseOpen` / `suppressCandidate`, both require
+  `case.work`). Suppression needs a documented reason.
+- **Third-party fixtures** (`data/third-party-alerts.ts`) — seeded
+  `third-party-edr` / `-cloud-sec` / `-email-sec` / `-identity` envelopes for
+  Summit Credit Union (SOC-only, no SIEM — its whole stream is third-party)
+  and Northwind Bank (alongside native). Their technique claims cite the
+  source's own opaque event ids; the case ATT&CK breakdown shows those as
+  "source-provided" (not resolvable in the Log Explorer), while native refs
+  stay clickable through to it.
+- **Cases** — `schemas/case.ts` Zod mirror with `.refine` guards (a closed
+  case needs `closed_at` + a classification with `closed_by`; a suppressed
+  closure needs a reason). Additive `triaged_at` for the pipeline-latency
+  SOC-ack stage. `closeCase` re-validates the whole case against the contract.
+  Case status flow `new → triaged → investigating → contained → recovering →
+  closed → reopened` enforced server-side (`CASE_TRANSITIONS`); closing is a
+  separate path because the classification is required.
+- **Seeded state** (`data/soc-seed.ts`) — runs the full intake → grouping →
+  triage path once at store assembly. A few candidates start as Cases (mix of
+  investigating / triaged / closed-TP / closed-FP), the rest sit pending in
+  the queue. Every candidate gets a Triage Agent run visible on `/agents/runs`.
+- **Mutable session state** — `openedCases`, `caseOverrides`, and
+  `intakeDecisions` layered over the seed. Audit gains `case_created` /
+  `case_status_changed` / `alert_suppressed` and target type `alert` (JSON +
+  Zod).
+- **Screens:**
+  - `/alerts` — intake queue: pending candidates with the Triage Agent
+    recommendation, an Actioned list, and a "Not accepted" section showing
+    quarantine reasons + duplicates. Confirm-open / suppress inline (L2).
+  - `/cases` + `/cases/[id]` — case list with filters; detail with linked
+    alerts (origin badge, no logic branch), the ATT&CK technique breakdown
+    (traceable vs source-provided), the Triage Agent advisory, linked agent
+    runs, a workflow rail (status transitions, owner, close-with-
+    classification), and a pipeline-latency panel. Investigation / evidence /
+    timeline are stubbed for M4b.
+  - `/soc-dashboard` — real dashboard: pending triage, open cases, SLA
+    breach, quarantine; MTTD / MTTA / MTTR; open-by-status, closure mix,
+    recent cases. All tiles drill through.
+- 20 SOAR tests (intake dedup/quarantine/no-source-branch, deterministic
+  grouping, triage open-vs-suppress). **117 tests total.**
+
 ## M2 — what's in
 
 - **Correlation engine** (`lib/correlation/`) — deterministic, LLM-free. Rule
@@ -215,7 +273,7 @@ component API, no dependency on the CLI.
 
 ## Tests
 
-Vitest, pure-function coverage on the load-bearing pieces (74 tests):
+Vitest, pure-function coverage on the load-bearing pieces (117 tests):
 
 - `src/lib/query/parser.test.ts` — the safe query parser: valid grammar,
   injection/code rejection (`;`, `$(…)`, backticks, `--`, `/* */`, `\x`),
@@ -231,6 +289,14 @@ Vitest, pure-function coverage on the load-bearing pieces (74 tests):
   `examples/sample-*.json` fixture and rejects a broken one; the
   non-negotiable refinements (no empty `contributing_event_refs`, enabled
   rule needs D3FEND + `enabled_by`, quarantine needs a reason).
+- `src/lib/correlation/engine.test.ts`, `src/lib/detection/lifecycle.test.ts`
+  — deterministic correlation firing per rule type; rule-lifecycle
+  enforcement (agent confined to draft→peer_review, no self-approval,
+  segregation of duties).
+- `src/lib/soc/{intake,grouping,triage}.test.ts` — envelope quarantine vs
+  drop, dedup by key, identical disposition for native and third-party
+  (no `source.system` branch); deterministic order-independent grouping;
+  triage never suppresses a corroborated candidate.
 
 ## Running
 
@@ -240,5 +306,5 @@ npm install
 npm run dev       # http://localhost:3000
 npm run build     # production build — passes clean
 npm run lint      # ESLint — passes clean
-npm test          # Vitest — 74 tests, passes clean
+npm test          # Vitest — 117 tests, passes clean
 ```

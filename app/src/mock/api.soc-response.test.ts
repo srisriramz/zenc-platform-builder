@@ -48,6 +48,12 @@ describe("kill switch freezes the whole response pipeline (fix M3)", () => {
     await expect(api.toggleKillSwitch(admin, "global", true)).rejects.toThrow(/reason/i);
   });
 
+  it("the cross-tenant kill-switch list is admin/audit only, not any soc.view user (fix S1)", async () => {
+    await expect(api.fetchKillSwitches(analyst)).rejects.toThrow(); // analyst == priya, soc.view only
+    await expect(api.fetchKillSwitches(admin)).resolves.toHaveProperty("switches");
+    await expect(api.fetchKillSwitches({ userId: "user-omar-auditor", tenantId: "tenant-northwind-bank" })).resolves.toHaveProperty("switches");
+  });
+
   it("neither plan nor request works on a closed case", async () => {
     const closed = getStore().cases.find((c) => c.tenant_id === "tenant-northwind-bank" && c.status === "closed")!;
     await expect(api.planCaseResponse(analyst, closed.case_id)).rejects.toThrow(/closed/i);

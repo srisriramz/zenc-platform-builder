@@ -2047,7 +2047,9 @@ function assertResponsePipelineOpen(tenantId: string): void {
 
 export async function fetchKillSwitches(ctx: SessionContext) {
   await gate("kill-switches", 90);
-  if (!can(ctx, "admin.policy") && !can(ctx, "soc.view") && !can(ctx, "audit.view")) assertCan(ctx, "soc.view");
+  // kill-switch state across tenants/partners is cross-tenant policy data —
+  // same gate as fetchPolicies, not the looser soc.view.
+  if (!can(ctx, "admin.policy") && !can(ctx, "audit.view")) assertCan(ctx, "admin.policy");
   return { switches: killSwitchViews(), can_toggle: can(ctx, "admin.policy") };
 }
 

@@ -52,7 +52,7 @@ export function CommandPalette({
     }).map((i) => ({
       id: `nav:${i.href}`,
       label: i.label,
-      hint: i.section + (i.milestone ? ` · ${i.milestone}` : ""),
+      hint: i.section,
       group: "Navigate" as const,
       icon: i.icon,
       run: () => {

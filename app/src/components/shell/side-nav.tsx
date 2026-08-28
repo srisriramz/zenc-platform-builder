@@ -7,7 +7,6 @@ import { ROLES } from "@/data/platform";
 import { NAV_ITEMS, type NavItem } from "./nav";
 import { useSession } from "@/store/session";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/primitives";
 
 export function SideNav({
   bootstrap,
@@ -68,11 +67,6 @@ export function SideNav({
                       />
                       <Icon className={cn("size-4 flex-none transition-colors", active ? "text-primary" : "text-muted-foreground/70")} />
                       <span className="flex-1 truncate">{item.label}</span>
-                      {item.milestone && (
-                        <Badge variant="outline" className="px-1 py-0 text-[9px] font-medium">
-                          {item.milestone}
-                        </Badge>
-                      )}
                     </Link>
                   </li>
                 );

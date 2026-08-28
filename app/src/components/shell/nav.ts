@@ -38,7 +38,6 @@ export interface NavItem {
   icon: LucideIcon;
   requires?: "has_siem" | "has_soc";
   permission?: Permission;
-  milestone?: "M2" | "M3" | "M4" | "M5";
 }
 
 export const NAV_ITEMS: NavItem[] = [

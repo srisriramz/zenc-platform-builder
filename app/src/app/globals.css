@@ -195,6 +195,9 @@
     0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ring) 45%, transparent); }
     70%, 100% { box-shadow: 0 0 0 6px transparent; }
   }
+  @keyframes orbit {
+    to { transform: rotate(360deg); }
+  }
 }
 
 @layer base {

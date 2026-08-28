@@ -18,6 +18,7 @@ import {
 import type { BootstrapData } from "@/mock/api";
 import { ROLES } from "@/data/platform";
 import { PRODUCT_LABEL, useSession, type SimMode } from "@/store/session";
+import { ZencMark } from "@/components/brand/zenc-logo";
 import { Button } from "@/components/ui/button";
 import { Badge, Kbd } from "@/components/ui/primitives";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu";
@@ -66,12 +67,12 @@ export function TopBar({
           <MenuIcon className="size-4" />
         </Button>
 
-        <div className="flex items-center gap-2 font-semibold">
-          <span className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-primary to-[color-mix(in_oklch,var(--primary)_60%,var(--gold))] text-primary-foreground shadow-sm">
-            <ShieldCheck className="size-4" />
+        <a href="/siem-dashboard" aria-label="ZenC — home" className="flex items-center gap-2 rounded-md">
+          <ZencMark size={26} className="text-foreground" />
+          <span className="hidden font-display text-[0.95rem] font-bold leading-none tracking-tight sm:inline">
+            Zen<span className="text-primary">C</span>
           </span>
-          <span className="hidden font-display text-sm font-semibold tracking-tight sm:inline">ZenC</span>
-        </div>
+        </a>
 
         {/* product switcher */}
         <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs">

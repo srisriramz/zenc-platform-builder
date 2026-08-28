@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { USERS, TENANT_MAP, ROLES } from "@/data/platform";
 import { useSession } from "@/store/session";
+import { ZencMark } from "@/components/brand/zenc-logo";
 import { Card, CardContent, Badge } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 
@@ -35,11 +36,11 @@ export default function LoginPage() {
 
       <div className="anim-rise space-y-5">
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-primary to-[color-mix(in_oklch,var(--primary)_60%,var(--gold))] text-primary-foreground shadow-md">
-            <ShieldCheck className="size-5" />
-          </span>
+          <ZencMark size={40} className="text-foreground" />
           <div>
-            <p className="text-base font-semibold tracking-tight">ZenC Security Intelligence Platform</p>
+            <p className="font-display text-base font-bold tracking-tight">
+              Zen<span className="text-primary">C</span> Security Intelligence Platform
+            </p>
             <p className="text-xs text-muted-foreground">SIEM · SOAR — interactive demo</p>
           </div>
         </div>

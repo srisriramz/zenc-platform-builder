@@ -9,6 +9,7 @@ import {
   fetchAlertDetail,
   fetchAlerts,
   fetchCorrelationRules,
+  fetchCoverageMatrix,
   fetchEntityRisk,
   fetchEntityRiskDetail,
   fetchEventLineage,
@@ -92,6 +93,15 @@ export function useCorrelationRules() {
   return useQuery({
     queryKey: ["correlation-rules", ctx?.tenantId],
     queryFn: () => fetchCorrelationRules(ctx!),
+    enabled: !!ctx,
+  });
+}
+
+export function useCoverageMatrix() {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["coverage-matrix", ctx?.tenantId],
+    queryFn: () => fetchCoverageMatrix(ctx!),
     enabled: !!ctx,
   });
 }

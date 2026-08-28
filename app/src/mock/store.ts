@@ -31,8 +31,8 @@ import { buildSocLayer } from "@/data/soc-seed";
 import { buildResponseLayer } from "@/data/soc-seed-response";
 import { PLAYBOOKS } from "@/data/playbooks";
 import { runCorrelation } from "@/lib/correlation/engine";
-import { ATTACK_TECHNIQUES, ATTACK_TACTICS } from "@/data/frameworks/attack";
-import { D3FEND_TECHNIQUES } from "@/data/frameworks/d3fend";
+import { ATTACK_TECHNIQUES, ATTACK_TACTICS, ATTACK_VERSION } from "@/data/frameworks/attack";
+import { D3FEND_TECHNIQUES, D3FEND_VERSION } from "@/data/frameworks/d3fend";
 
 export interface ConnectorRuntime extends TelemetrySource {
   connector_label: string;
@@ -265,6 +265,8 @@ function assemble() {
       attackTactics: ATTACK_TACTICS,
       attackTechniques: ATTACK_TECHNIQUES,
       d3fendTechniques: D3FEND_TECHNIQUES,
+      attackVersion: ATTACK_VERSION,
+      d3fendVersion: D3FEND_VERSION,
     },
   };
 }

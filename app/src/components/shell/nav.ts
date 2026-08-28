@@ -49,7 +49,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/entities", label: "Entities at Risk", section: "SIEM", product: "siem", icon: Fingerprint, requires: "has_siem", permission: "siem.view" },
   { href: "/correlation", label: "Correlation", section: "SIEM", product: "siem", icon: Radar, requires: "has_siem", permission: "siem.view" },
   { href: "/detections", label: "Detection Engineering", section: "SIEM", product: "siem", icon: ShieldHalf, requires: "has_siem", permission: "rule.view" },
-  { href: "/coverage", label: "ATT&CK × D3FEND Coverage", section: "SIEM", product: "siem", icon: Boxes, requires: "has_siem", permission: "siem.view", milestone: "M5" },
+  { href: "/coverage", label: "ATT&CK × D3FEND Coverage", section: "SIEM", product: "siem", icon: Boxes, requires: "has_siem", permission: "siem.view" },
 
   // ---- SOAR (Respond product; internal key stays "soc") ----
   { href: "/soc-dashboard", label: "SOAR Dashboard", section: "SOAR", product: "soc", icon: Gauge, requires: "has_soc", permission: "soc.view" },

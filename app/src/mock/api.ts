@@ -39,6 +39,7 @@ import { runCorrelation, type CorrelationContext } from "@/lib/correlation/engin
 import { CORRELATION_RULES, type SeededRule } from "@/data/correlation-rules";
 import { AGENTS } from "@/data/agents";
 import { ATTACK_TECHNIQUE_MAP } from "@/data/frameworks/attack";
+import { buildCoverageMatrix } from "@/lib/coverage/matrix";
 import { PARTNERS, ROLES, TENANT_MAP } from "@/data/platform";
 import { dailyVolumeSeries } from "@/data/ingestion-profile";
 import { DEMO_NOW_ISO, minus, secondsBetween } from "@/lib/time";
@@ -782,6 +783,53 @@ export async function fetchDetectionAnalytics(ctx: SessionContext) {
 }
 
 export type DetectionAnalytics = Awaited<ReturnType<typeof fetchDetectionAnalytics>>;
+
+// ---------------------------------------------------------------------------
+// SIEM — ATT&CK × D3FEND coverage matrix
+// ---------------------------------------------------------------------------
+
+export async function fetchCoverageMatrix(ctx: SessionContext) {
+  await gate("coverage", 220);
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "siem.view");
+  const store = getStore();
+  const sources = store.telemetrySources.filter((s) => s.tenant_id === ctx.tenantId);
+  const connectedFamilies = new Set(sources.map((s) => s.family));
+  const liveFamilies = new Set(sources.filter((s) => s.health !== "stale").map((s) => s.family));
+  const observedTechniqueIds = new Set(
+    store.normalizedEvents
+      .filter((e) => e.tenant_id === ctx.tenantId && e.normalization_status === "normalized")
+      .flatMap((e) => e.attack_technique_refs ?? []),
+  );
+
+  const rules = mergedRules(ctx.tenantId).filter((r) => r.lifecycle_state === "enabled");
+  const firedRuleIds = new Set(rules.filter((r) => (store.ruleFireCounts[r.rule_id] ?? recomputeFireCount(r)) > 0).map((r) => r.rule_id));
+
+  // response side only exists when the tenant also has SOAR
+  const hasSoc = !!TENANT_MAP[ctx.tenantId]?.entitlements.has_soc;
+  const enabledPlaybooks = hasSoc ? mergedPlaybooks(ctx.tenantId).filter((p) => p.lifecycle_state === "enabled") : [];
+
+  const matrix = buildCoverageMatrix({
+    techniques: store.frameworks.attackTechniques,
+    tactics: store.frameworks.attackTactics,
+    connectedFamilies,
+    liveFamilies,
+    observedTechniqueIds,
+    enabledRules: rules.map((r) => ({ rule_id: r.rule_id, name: r.name, attack_mapping: r.attack_mapping, d3fend_mapping: r.d3fend_mapping })),
+    firedRuleIds,
+    enabledPlaybooks: enabledPlaybooks.map((p) => ({ playbook_id: p.playbook_id, name: p.name, applies_to_techniques: p.applies_to_techniques, steps: p.steps })),
+  });
+
+  return {
+    ...matrix,
+    demoNowIso: store.demoNowIso,
+    has_soc: hasSoc,
+    attack_version: store.frameworks.attackVersion,
+    d3fend_version: store.frameworks.d3fendVersion,
+  };
+}
+
+export type CoverageMatrixView = Awaited<ReturnType<typeof fetchCoverageMatrix>>;
 
 // ---------------------------------------------------------------------------
 // SIEM — Log Explorer

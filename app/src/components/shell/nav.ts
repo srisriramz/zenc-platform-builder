@@ -62,7 +62,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/playbooks", label: "Playbooks", section: "SOAR", product: "soc", icon: ScrollText, requires: "has_soc", permission: "soc.view" },
   { href: "/approvals", label: "Approval Queue", section: "SOAR", product: "soc", icon: BadgeCheck, requires: "has_soc", permission: "soc.view" },
   { href: "/actions", label: "Response Actions", section: "SOAR", product: "soc", icon: Zap, requires: "has_soc", permission: "soc.view" },
-  { href: "/reporting", label: "SOAR Reporting", section: "SOAR", product: "soc", icon: Activity, requires: "has_soc", permission: "soc.view", milestone: "M5" },
+  { href: "/reporting", label: "SOAR Reporting", section: "SOAR", product: "soc", icon: Activity, requires: "has_soc", permission: "reporting.view" },
 
   // ---- Analytics (cross-product reporting layer; degrades when a product is absent) ----
   { href: "/analytics", label: "Analytics", section: "Analytics", product: "platform", icon: LineChart, permission: "reporting.view" },

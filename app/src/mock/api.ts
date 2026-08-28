@@ -77,6 +77,7 @@ import { approvalRequirement, canApprove, type ApprovalPolicy } from "@/lib/soc/
 import { executeAction as runExecutor, rollbackAction as runRollback, isReversible } from "@/lib/soc/executor";
 import { summarizeCaseOrchestration } from "@/lib/soc/supervisor";
 import { reviewAgentRun } from "@/lib/soc/qa-governance";
+import { buildSocReport, draftReportNarrative } from "@/lib/soc/reporting";
 import { hashString } from "@/lib/prng";
 
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
@@ -788,26 +789,24 @@ export type DetectionAnalytics = Awaited<ReturnType<typeof fetchDetectionAnalyti
 // SIEM — ATT&CK × D3FEND coverage matrix
 // ---------------------------------------------------------------------------
 
-export async function fetchCoverageMatrix(ctx: SessionContext) {
-  await gate("coverage", 220);
-  assertEntitlement(ctx, "has_siem");
-  assertCan(ctx, "siem.view");
+/** the coverage matrix computation, without the entitlement/permission gate */
+function coverageMatrixFor(tenantId: string) {
   const store = getStore();
-  const sources = store.telemetrySources.filter((s) => s.tenant_id === ctx.tenantId);
+  const sources = store.telemetrySources.filter((s) => s.tenant_id === tenantId);
   const connectedFamilies = new Set(sources.map((s) => s.family));
   const liveFamilies = new Set(sources.filter((s) => s.health !== "stale").map((s) => s.family));
   const observedTechniqueIds = new Set(
     store.normalizedEvents
-      .filter((e) => e.tenant_id === ctx.tenantId && e.normalization_status === "normalized")
+      .filter((e) => e.tenant_id === tenantId && e.normalization_status === "normalized")
       .flatMap((e) => e.attack_technique_refs ?? []),
   );
 
-  const rules = mergedRules(ctx.tenantId).filter((r) => r.lifecycle_state === "enabled");
+  const rules = mergedRules(tenantId).filter((r) => r.lifecycle_state === "enabled");
   const firedRuleIds = new Set(rules.filter((r) => (store.ruleFireCounts[r.rule_id] ?? recomputeFireCount(r)) > 0).map((r) => r.rule_id));
 
   // response side only exists when the tenant also has SOAR
-  const hasSoc = !!TENANT_MAP[ctx.tenantId]?.entitlements.has_soc;
-  const enabledPlaybooks = hasSoc ? mergedPlaybooks(ctx.tenantId).filter((p) => p.lifecycle_state === "enabled") : [];
+  const hasSoc = !!TENANT_MAP[tenantId]?.entitlements.has_soc;
+  const enabledPlaybooks = hasSoc ? mergedPlaybooks(tenantId).filter((p) => p.lifecycle_state === "enabled") : [];
 
   const matrix = buildCoverageMatrix({
     techniques: store.frameworks.attackTechniques,
@@ -827,6 +826,13 @@ export async function fetchCoverageMatrix(ctx: SessionContext) {
     attack_version: store.frameworks.attackVersion,
     d3fend_version: store.frameworks.d3fendVersion,
   };
+}
+
+export async function fetchCoverageMatrix(ctx: SessionContext) {
+  await gate("coverage", 220);
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "siem.view");
+  return coverageMatrixFor(ctx.tenantId);
 }
 
 export type CoverageMatrixView = Awaited<ReturnType<typeof fetchCoverageMatrix>>;
@@ -2578,4 +2584,142 @@ export async function fetchCaseOrchestration(ctx: SessionContext, caseId: string
     return reviewAgentRun(run, msgs);
   });
   return { supervisor, qa, plan: mergedPlanFor(caseId) };
+}
+
+// ---------------------------------------------------------------------------
+// M5 — SOC reporting + Reporting Agent
+// ---------------------------------------------------------------------------
+
+/** cases that had at least one non-triage agent run (agent-assisted resolution) */
+function agentAssistedCaseIds(tenantId: string): Set<string> {
+  const runs = [...getSession().agentRuns, ...getStore().agentActivity.runs].filter((r) => r.tenant_id === tenantId);
+  const ids = new Set<string>();
+  for (const r of runs) {
+    if (/^run-(enrich|investigate|advisor|plan|hunt)-/.test(r.agent_run_id)) ids.add(r.case_id);
+  }
+  return ids;
+}
+
+function socReportFor(tenantId: string) {
+  const store = getStore();
+  const cases = mergedCases(tenantId);
+  const nativeAlerts = socAlertsFor(tenantId).filter((a) => a.source.system === "zenc-siem");
+  const intakeItems = store.intakeItems.filter((i) => i.tenant_id === tenantId);
+  const candidates = store.caseCandidates.filter((c) => c.tenant_id === tenantId);
+
+  // per-stage second samples that need event resolution
+  const eventById = new Map(store.normalizedEvents.filter((e) => e.tenant_id === tenantId).map((e) => [e.event_id, e] as const));
+  const collection: number[] = [];
+  const siemDetection: number[] = [];
+  const handoff: number[] = [];
+  for (const a of nativeAlerts) {
+    const refs = (a.attack_techniques ?? []).flatMap((t) => t.contributing_event_refs);
+    const evs = [...new Set(refs)].map((r) => eventById.get(r)).filter(Boolean) as NormalizedEvent[];
+    for (const e of evs) collection.push(secondsBetween(e.occurred_at, e.ingested_at));
+    if (a.correlated_at && evs.length) {
+      const lastIngest = evs.reduce((m, e) => (Date.parse(e.ingested_at) > Date.parse(m) ? e.ingested_at : m), evs[0].ingested_at);
+      siemDetection.push(Math.max(0, secondsBetween(lastIngest, a.correlated_at)));
+    }
+    if (a.correlated_at && a.received_at) handoff.push(Math.max(0, secondsBetween(a.correlated_at, a.received_at)));
+  }
+
+  const hasSiem = !!TENANT_MAP[tenantId]?.entitlements.has_siem;
+  const coverage = hasSiem
+    ? (() => {
+        const m = coverageMatrixFor(tenantId);
+        return { detection_pct: m.kpis.detection_coverage_pct, response_pct: m.kpis.response_coverage_pct, techniques_in_scope: m.kpis.techniques_in_scope };
+      })()
+    : null;
+
+  const alertById = new Map(socAlertsFor(tenantId).map((a) => [a.envelope_id, a] as const));
+  const receivedAtByCase = new Map<string, string>();
+  for (const c of cases) {
+    const rec = c.linked_alert_ids
+      .map((id) => alertById.get(id)?.received_at)
+      .filter((x): x is string => !!x)
+      .sort()[0];
+    if (rec) receivedAtByCase.set(c.case_id, rec);
+  }
+
+  return buildSocReport({
+    cases,
+    nativeAlerts,
+    receivedAtByCase,
+    candidateCount: candidates.length,
+    intakeAcceptedCount: intakeItems.filter((i) => i.disposition === "accepted").length,
+    stageSamples: { collection, siem_detection: siemDetection, handoff },
+    agentAssistedCaseIds: agentAssistedCaseIds(tenantId),
+    coverage,
+  });
+}
+
+export async function fetchSocReport(ctx: SessionContext) {
+  await gate("soc-report", 260);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "reporting.view");
+  const report = socReportFor(ctx.tenantId);
+  const session = getSession();
+  const store = getStore();
+  const lastRun = [...session.agentRuns, ...store.agentActivity.runs]
+    .filter((r) => r.tenant_id === ctx.tenantId && r.agent_run_id.startsWith("run-report-"))
+    .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))[0];
+  const lastNarrative = lastRun
+    ? [...session.agentMessages, ...store.agentActivity.messages].find((m) => m.agent_run_id === lastRun.agent_run_id)?.claim ?? null
+    : null;
+  return {
+    report,
+    demoNowIso: store.demoNowIso,
+    tenant_name: TENANT_MAP[ctx.tenantId]?.name ?? ctx.tenantId,
+    last_draft: lastRun ? { run_id: lastRun.agent_run_id, at: lastRun.started_at, preview: lastNarrative } : null,
+  };
+}
+
+export type SocReportView = Awaited<ReturnType<typeof fetchSocReport>>;
+
+export async function runReportingAgent(ctx: SessionContext) {
+  await gate("reporting-agent", 600);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "reporting.view");
+  const report = socReportFor(ctx.tenantId);
+  const nameOf = (id: string) => getStore().users.find((u) => u.user_id === id)?.display_name ?? id;
+  const narrative = draftReportNarrative(report, nameOf);
+
+  const now = DEMO_NOW_ISO;
+  const runId = `run-report-${(hashString(now + getSession().agentRuns.length) >>> 0).toString(36)}`;
+  const message: AgentMessage = {
+    message_id: `${runId}-m1`,
+    agent_run_id: runId,
+    agent_name: "reporting-agent",
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    prompt_version: "reporting-agent-prompt-v1.0",
+    tool_version: "kpi-aggregate-read-tool-v1.0",
+    input_ref: `soc-report:${ctx.tenantId}`,
+    tool_calls: [
+      { tool_name: "kpi-aggregate-read", called_at: now, scope_or_bound: "tenant-scoped aggregates" },
+      { tool_name: "case-read", called_at: now, scope_or_bound: "approved case data only" },
+    ],
+    claim: narrative,
+    confidence: 0.7,
+    evidence: [{ evidence_ref: `kpi-aggregate:${ctx.tenantId}`, supports: true, freshness: now }],
+    policy_outcome: "draft only — the Reporting Agent cannot publish; external-facing copy needs human sign-off",
+  };
+  addAgentRun(
+    {
+      agent_run_id: runId,
+      tenant_id: ctx.tenantId,
+      case_id: `soc-report:${ctx.tenantId}`,
+      subject_type: "case",
+      started_at: now,
+      completed_at: now,
+      message_ids: [message.message_id],
+      total_tool_calls: 2,
+      elapsed_seconds: 8,
+      human_touchpoints: [{ principal_id: ctx.userId, action: "reviewed", at: now, note: "Requested a report draft" }],
+      outcome: "completed",
+      analyst_feedback: null,
+    },
+    [message],
+  );
+  return { run_id: runId, narrative };
 }

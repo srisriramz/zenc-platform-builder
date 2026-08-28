@@ -5,3 +5,4 @@ export * from "./alert-envelope";
 export * from "./correlation-rule";
 export * from "./audit-event";
 export * from "./entity-risk";
+export * from "./agent";

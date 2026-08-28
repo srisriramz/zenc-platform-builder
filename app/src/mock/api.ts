@@ -8,14 +8,36 @@
  * No real network. This is the seam a real backend would replace.
  */
 import { getStore } from "./store";
+import {
+  addAgentRun,
+  addProposedRule,
+  appendAudit,
+  getSession,
+  updateAgentRun,
+  updateProposedRule,
+  upsertRuleOverride,
+} from "./session-store";
 import { AccessError, assertCan, assertEntitlement, can, permissionsFor, roleInTenant, type SessionContext } from "./rbac";
 import { parseQuery, type ParseError } from "@/lib/query/parser";
 import { runQuery, type EvalContext, type RunQueryError, type RunQueryResult } from "@/lib/query/evaluate";
-import type { NormalizedEvent } from "@/schemas";
+import { validateTransition } from "@/lib/detection/lifecycle";
+import { runRegression } from "@/lib/detection/regression";
+import { runCorrelation, type CorrelationContext } from "@/lib/correlation/engine";
+import { CORRELATION_RULES, type SeededRule } from "@/data/correlation-rules";
+import { AGENTS } from "@/data/agents";
+import { ATTACK_TECHNIQUE_MAP } from "@/data/frameworks/attack";
 import { TENANT_MAP } from "@/data/platform";
 import { dailyVolumeSeries } from "@/data/ingestion-profile";
-import type { SeededRule } from "@/data/correlation-rules";
-import type { AlertEnvelope, CorrelationRule } from "@/schemas";
+import { DEMO_NOW_ISO } from "@/lib/time";
+import type {
+  AgentMessage,
+  AlertEnvelope,
+  AnalystFeedback,
+  CorrelationRule,
+  NormalizedEvent,
+  RuleLifecycleState,
+} from "@/schemas";
+import type { RuleDefinition } from "@/lib/correlation/types";
 
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
 
@@ -109,7 +131,9 @@ export async function fetchSessionCapabilities(ctx: SessionContext) {
 export async function fetchAudit(ctx: SessionContext) {
   await gate("audit");
   assertCan(ctx, "audit.view");
-  return getStore().audit.filter((a) => a.tenant_id === ctx.tenantId);
+  return [...getSession().audit, ...getStore().audit]
+    .filter((a) => a.tenant_id === ctx.tenantId)
+    .sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at));
 }
 
 export async function fetchAdminTenants(ctx: SessionContext) {
@@ -203,34 +227,93 @@ export type RuleView = CorrelationRule & {
   definition: Record<string, unknown>;
   alert_title: string;
   fired_count: number;
+  /** the transitions the current viewer is allowed to make right now */
+  allowed_transitions: RuleLifecycleState[];
+  is_agent_proposed: boolean;
 };
 
-function toRuleView(rule: SeededRule, firedCount: number): RuleView {
-  const { alert_summary: _summary, alert_title, definition, ...rest } = rule;
+const HUMAN_TRANSITIONS: Partial<Record<RuleLifecycleState, RuleLifecycleState[]>> = {
+  draft: ["test"],
+  test: ["draft", "peer_review"],
+  peer_review: ["draft", "approved"],
+  approved: ["draft", "enabled"],
+  enabled: ["disabled"],
+  disabled: ["enabled", "retired"],
+};
+
+/** the full merged rule set for a tenant (seed ∪ session overrides ∪ proposed) */
+function mergedRules(tenantId: string): SeededRule[] {
+  const session = getSession();
+  const merged = CORRELATION_RULES.filter((r) => r.tenant_id === tenantId).map((r) => {
+    const o = session.ruleOverrides.get(r.rule_id);
+    if (!o) return r;
+    return {
+      ...r,
+      lifecycle_state: o.lifecycle_state ?? r.lifecycle_state,
+      enabled_by: o.enabled_by ?? r.enabled_by,
+      version: o.version ?? r.version,
+      history: o.history ?? r.history,
+      regression_test_results: o.regression_test_results ?? r.regression_test_results,
+    };
+  });
+  return [...merged, ...session.proposedRules.filter((r) => r.tenant_id === tenantId)];
+}
+
+function getMergedRule(tenantId: string, ruleId: string): SeededRule | undefined {
+  return mergedRules(tenantId).find((r) => r.rule_id === ruleId);
+}
+
+function toRuleView(rule: SeededRule, ctx: SessionContext): RuleView {
+  const { alert_summary: _summary, alert_title, definition, expected_test_matches: _e, ...rest } = rule;
   void _summary;
-  return { ...rest, alert_title, definition: definition as unknown as Record<string, unknown>, fired_count: firedCount };
+  void _e;
+  const perms = permissionsFor(ctx);
+  const allowed = (HUMAN_TRANSITIONS[rule.lifecycle_state] ?? []).filter(
+    (to) => validateTransition(rule, to, { principal_id: ctx.userId, principal_type: "human", permissions: perms }).ok,
+  );
+  return {
+    ...rest,
+    alert_title,
+    definition: definition as unknown as Record<string, unknown>,
+    fired_count: getStore().ruleFireCounts[rule.rule_id] ?? (rule.lifecycle_state === "enabled" ? recomputeFireCount(rule) : 0),
+    allowed_transitions: allowed,
+    is_agent_proposed: rule.proposed_by === "detection-engineer-agent",
+  };
+}
+
+function correlationCtxFor(): CorrelationContext {
+  const store = getStore();
+  const familyMap = new Map(store.telemetrySources.map((s) => [s.telemetry_source_id, s.family]));
+  const healthMap = new Map(store.telemetrySources.map((s) => [s.telemetry_source_id, s.health]));
+  return { familyOf: (id) => familyMap.get(id), healthOf: (id) => healthMap.get(id) };
+}
+
+function recomputeFireCount(rule: SeededRule): number {
+  const [firing] = runCorrelation(getStore().normalizedEvents, [rule], correlationCtxFor());
+  return firing?.alerts.length ?? 0;
 }
 
 export async function fetchCorrelationRules(ctx: SessionContext): Promise<RuleView[]> {
   await gate("correlation-rules");
   assertEntitlement(ctx, "has_siem");
   assertCan(ctx, "rule.view");
-  const store = getStore();
-  return store.correlationRules
-    .filter((r) => r.tenant_id === ctx.tenantId)
-    .map((r) => toRuleView(r, store.ruleFireCounts[r.rule_id] ?? 0));
+  return mergedRules(ctx.tenantId).map((r) => toRuleView(r, ctx));
 }
 
 export async function fetchRuleDetail(ctx: SessionContext, ruleId: string) {
   await gate("rule-detail");
   assertEntitlement(ctx, "has_siem");
   assertCan(ctx, "rule.view");
-  const store = getStore();
-  const rule = store.correlationRules.find((r) => r.rule_id === ruleId && r.tenant_id === ctx.tenantId);
+  const rule = getMergedRule(ctx.tenantId, ruleId);
   if (!rule) throw new AccessError("permission_denied", "No such rule in this tenant.");
+  const store = getStore();
+  const runsForRule = getSession()
+    .agentRuns.concat(store.agentActivity.runs)
+    .filter((run) => run.tenant_id === ctx.tenantId && run.subject_type === "detection_rule" && run.case_id === ruleId);
   return {
-    rule: toRuleView(rule, store.ruleFireCounts[rule.rule_id] ?? 0),
+    rule: toRuleView(rule, ctx),
     alerts: store.alerts.filter((a) => a.tenant_id === ctx.tenantId && (a.attack_techniques ?? []).some((t) => t.source_rule_id === ruleId)),
+    agent_runs: runsForRule,
   };
 }
 
@@ -265,15 +348,291 @@ export async function fetchAlertDetail(ctx: SessionContext, envelopeId: string) 
   const eventsById = new Map(
     store.normalizedEvents.filter((e) => allRefs.has(e.event_id)).map((e) => [e.event_id, e] as const),
   );
-  const rule = store.correlationRules.find((r) =>
-    (alert.attack_techniques ?? []).some((t) => t.source_rule_id === r.rule_id),
-  );
+  const ruleId = (alert.attack_techniques ?? []).map((t) => t.source_rule_id).find(Boolean);
+  const rule = ruleId ? getMergedRule(ctx.tenantId, ruleId) : undefined;
 
   return {
     alert,
-    rule: rule ? toRuleView(rule, store.ruleFireCounts[rule.rule_id] ?? 0) : null,
+    rule: rule ? toRuleView(rule, ctx) : null,
     contributingEvents: [...eventsById.values()],
   };
+}
+
+// ---------------------------------------------------------------------------
+// M3 — Detection engineering workflow (agent + rule lifecycle)
+// ---------------------------------------------------------------------------
+
+export async function fetchAgents(ctx: SessionContext) {
+  await gate("agents", 60);
+  if (!can(ctx, "soc.view") && !can(ctx, "rule.view")) assertCan(ctx, "soc.view");
+  return AGENTS;
+}
+
+export async function fetchAgentRuns(ctx: SessionContext) {
+  await gate("agent-runs");
+  if (!can(ctx, "soc.view") && !can(ctx, "rule.view")) assertCan(ctx, "soc.view");
+  const store = getStore();
+  const runs = [...getSession().agentRuns, ...store.agentActivity.runs].filter((r) => r.tenant_id === ctx.tenantId);
+  return runs.map((r) => ({
+    ...r,
+    subject_label:
+      r.subject_type === "detection_rule"
+        ? getMergedRule(ctx.tenantId, r.case_id)?.name ?? r.case_id
+        : r.case_id,
+  }));
+}
+
+export async function fetchAgentRun(ctx: SessionContext, runId: string) {
+  await gate("agent-run");
+  if (!can(ctx, "soc.view") && !can(ctx, "rule.view")) assertCan(ctx, "soc.view");
+  const store = getStore();
+  const run = [...getSession().agentRuns, ...store.agentActivity.runs].find(
+    (r) => r.agent_run_id === runId && r.tenant_id === ctx.tenantId,
+  );
+  if (!run) throw new AccessError("permission_denied", "No such agent run in this tenant.");
+  const messages = [...getSession().agentMessages, ...store.agentActivity.messages]
+    .filter((m) => m.agent_run_id === runId)
+    .sort((a, b) => Date.parse(a.occurred_at) - Date.parse(b.occurred_at));
+  return { run, messages, rule: run.subject_type === "detection_rule" ? getMergedRule(ctx.tenantId, run.case_id) ?? null : null };
+}
+
+export interface ProposeRuleInput {
+  name: string;
+  rule_type: CorrelationRule["rule_type"];
+  severity: CorrelationRule["severity"];
+  definition: RuleDefinition;
+  attack_mapping: CorrelationRule["attack_mapping"];
+  d3fend_mapping?: CorrelationRule["d3fend_mapping"];
+  d3fend_unmapped?: boolean;
+  confidence?: number;
+  alert_title: string;
+}
+
+export async function proposeRule(ctx: SessionContext, input: ProposeRuleInput): Promise<{ rule_id: string }> {
+  await gate("propose-rule", 120);
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "rule.propose");
+  const rule_id = `rule-${ctx.tenantId.replace("tenant-", "")}-${input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 32)}-${Date.now().toString(36).slice(-4)}`;
+  const now = DEMO_NOW_ISO;
+  addProposedRule({
+    rule_id,
+    tenant_id: ctx.tenantId,
+    name: input.name,
+    version: "0.1.0",
+    lifecycle_state: "draft",
+    proposed_by: ctx.userId,
+    rule_type: input.rule_type,
+    severity: input.severity,
+    confidence: input.confidence,
+    sector_tags: TENANT_MAP[ctx.tenantId] ? [TENANT_MAP[ctx.tenantId].sector] : undefined,
+    attack_mapping: input.attack_mapping,
+    d3fend_mapping: input.d3fend_mapping,
+    d3fend_unmapped: input.d3fend_unmapped,
+    regression_test_results: [],
+    history: [{ from_state: "—", to_state: "draft", changed_by: ctx.userId, changed_at: now }],
+    definition: input.definition,
+    alert_title: input.alert_title,
+    alert_summary: (n, key) => `${input.name}${key ? ` — ${key}` : ""} (${n} contributing event${n === 1 ? "" : "s"})`,
+  });
+  return { rule_id };
+}
+
+export async function runRuleRegression(ctx: SessionContext, ruleId: string) {
+  await gate("run-regression", 600); // regression is "slow" on purpose
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "rule.propose");
+  const rule = getMergedRule(ctx.tenantId, ruleId);
+  if (!rule) throw new AccessError("permission_denied", "No such rule.");
+
+  const result = runRegression(rule, getStore().normalizedEvents, correlationCtxFor(), DEMO_NOW_ISO);
+  const nextResults = [...(rule.regression_test_results ?? []), result];
+
+  // draft → test on the first successful run
+  const advance = rule.lifecycle_state === "draft";
+  applyTransition(ctx, rule, advance ? "test" : rule.lifecycle_state, "reviewed", nextResults, "regression run");
+  return result;
+}
+
+export async function transitionRule(
+  ctx: SessionContext,
+  ruleId: string,
+  to: RuleLifecycleState,
+  note?: string,
+) {
+  await gate("transition-rule", 140);
+  assertEntitlement(ctx, "has_siem");
+  const rule = getMergedRule(ctx.tenantId, ruleId);
+  if (!rule) throw new AccessError("permission_denied", "No such rule.");
+
+  const verdict = validateTransition(rule, to, {
+    principal_id: ctx.userId,
+    principal_type: "human",
+    permissions: permissionsFor(ctx),
+  });
+  if (!verdict.ok) throw new AccessError("permission_denied", verdict.message);
+
+  applyTransition(ctx, rule, to, "reviewed", rule.regression_test_results ?? [], note);
+  return { lifecycle_state: to };
+}
+
+function applyTransition(
+  ctx: SessionContext,
+  rule: SeededRule,
+  to: RuleLifecycleState,
+  _action: "approved" | "reviewed",
+  regression: NonNullable<SeededRule["regression_test_results"]>,
+  note?: string,
+) {
+  void _action;
+  void note;
+  const now = DEMO_NOW_ISO;
+  const from = rule.lifecycle_state;
+  const history = [
+    ...(rule.history ?? []),
+    ...(to !== from ? [{ from_state: from, to_state: to, changed_by: ctx.userId, changed_at: now }] : []),
+  ];
+  const patch = {
+    lifecycle_state: to,
+    history,
+    regression_test_results: regression,
+    ...(to === "enabled" ? { enabled_by: ctx.userId } : {}),
+  };
+
+  const isProposed = getSession().proposedRules.some((r) => r.rule_id === rule.rule_id);
+  if (isProposed) updateProposedRule(rule.rule_id, patch as Partial<SeededRule>);
+  else upsertRuleOverride(rule.rule_id, patch);
+
+  if (to !== from) {
+    appendAudit({
+      tenant_id: ctx.tenantId,
+      occurred_at: now,
+      actor: { principal_id: ctx.userId, principal_type: "human" },
+      action: "rule_state_changed",
+      target_type: "correlation_rule",
+      target_id: rule.rule_id,
+      detail: `${rule.name}: ${from} → ${to}${note ? ` (${note})` : ""}`,
+    });
+  }
+}
+
+export async function askAgentToProposeRule(ctx: SessionContext, techniqueId: string) {
+  await gate("agent-propose", 900);
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "rule.propose");
+  const tech = ATTACK_TECHNIQUE_MAP[techniqueId];
+  if (!tech) throw new AccessError("permission_denied", "Unknown technique.");
+
+  const now = DEMO_NOW_ISO;
+  const rule_id = `rule-${ctx.tenantId.replace("tenant-", "")}-agent-${techniqueId.toLowerCase().replace(".", "-")}`;
+  const runId = `run-de-${Date.now().toString(36)}`;
+  const tactic = tech.tactic_shortnames[0] ?? "execution";
+
+  // a single_event draft targeting an event type tagged to the technique
+  const draft: SeededRule = {
+    rule_id,
+    tenant_id: ctx.tenantId,
+    name: `${tech.name} — activity observed`,
+    version: "0.1.0",
+    lifecycle_state: "peer_review",
+    proposed_by: "detection-engineer-agent",
+    rule_type: "single_event",
+    severity: "medium",
+    confidence: 0.5,
+    sector_tags: TENANT_MAP[ctx.tenantId] ? [TENANT_MAP[ctx.tenantId].sector] : undefined,
+    attack_mapping: [{ tactic: titleCase(tactic), technique_id: techniqueId, technique_name: tech.name }],
+    d3fend_mapping: [{ d3fend_technique_id: "D3-UAN", d3fend_technique_name: "User Behavior Analysis", category: "Detect" }],
+    regression_test_results: [],
+    history: [
+      { from_state: "—", to_state: "draft", changed_by: "detection-engineer-agent", changed_at: now },
+      { from_state: "draft", to_state: "test", changed_by: "detection-engineer-agent", changed_at: now },
+      { from_state: "test", to_state: "peer_review", changed_by: "detection-engineer-agent", changed_at: now },
+    ],
+    definition: { kind: "single_event", match: { attack_technique_any: [techniqueId] } },
+    alert_title: `${tech.name} activity`,
+    alert_summary: (n, key) => `${tech.name} activity observed${key ? ` for ${key}` : ""} (${n} event${n === 1 ? "" : "s"}).`,
+    expected_test_matches: undefined,
+  };
+  addProposedRule(draft);
+  const reg = runRegression(draft, getStore().normalizedEvents, correlationCtxFor(), now);
+  updateProposedRule(rule_id, { regression_test_results: [reg] });
+
+  const messages: AgentMessage[] = [
+    {
+      message_id: `${runId}-m1`,
+      agent_run_id: runId,
+      agent_name: "detection-engineer-agent",
+      tenant_id: ctx.tenantId,
+      occurred_at: now,
+      prompt_version: "detection-engineer-agent-prompt-v2.3",
+      tool_version: "rule-read-tool-v1.2",
+      input_ref: `coverage-gap:${techniqueId}`,
+      tool_calls: [{ tool_name: "rule-read", called_at: now, scope_or_bound: "tenant rule catalog" }],
+      claim: `No enabled rule maps to ${techniqueId} (${tech.name}). Drafting a single-event rule on events natively tagged to it.`,
+      confidence: 0.55,
+      evidence: [{ evidence_ref: `coverage-matrix:${techniqueId}`, supports: true, freshness: now }],
+      escalated: false,
+    },
+    {
+      message_id: `${runId}-m2`,
+      agent_run_id: runId,
+      agent_name: "detection-engineer-agent",
+      tenant_id: ctx.tenantId,
+      occurred_at: now,
+      prompt_version: "detection-engineer-agent-prompt-v2.3",
+      tool_version: "rule-test-tool-v1.0",
+      rule_or_playbook_version: `${rule_id}-v0.1.0`,
+      input_ref: rule_id,
+      tool_calls: [
+        { tool_name: "rule-draft", called_at: now, scope_or_bound: "draft state only" },
+        { tool_name: "rule-test", called_at: now, scope_or_bound: "synthetic corpus" },
+      ],
+      claim: `Draft tested: ${reg.observed_matches} observed matches, noise ${reg.noise_indicator}, health "${reg.rule_health}". Submitting for human peer review — I cannot enable it.`,
+      confidence: 0.5,
+      evidence: [{ evidence_ref: `regression:${rule_id}:v0.1.0`, supports: reg.rule_health === "healthy", freshness: now }],
+      escalated: true,
+      escalation_reason: "policy_ambiguous_or_absent",
+      policy_outcome: "routed to peer_review — enabling a rule is a human-only action",
+    },
+  ];
+  addAgentRun(
+    {
+      agent_run_id: runId,
+      tenant_id: ctx.tenantId,
+      case_id: rule_id,
+      subject_type: "detection_rule",
+      started_at: now,
+      completed_at: now,
+      message_ids: messages.map((m) => m.message_id),
+      total_tool_calls: 3,
+      elapsed_seconds: 42,
+      human_touchpoints: [],
+      outcome: "escalated_pending_human",
+      analyst_feedback: null,
+    },
+    messages,
+  );
+  return { rule_id, run_id: runId };
+}
+
+export async function recordAnalystFeedback(ctx: SessionContext, runId: string, feedback: AnalystFeedback) {
+  await gate("analyst-feedback");
+  const session = getSession();
+  const run =
+    session.agentRuns.find((r) => r.agent_run_id === runId) ??
+    getStore().agentActivity.runs.find((r) => r.agent_run_id === runId);
+  if (!run || run.tenant_id !== ctx.tenantId) throw new AccessError("permission_denied", "No such run.");
+  updateAgentRun(runId, {
+    analyst_feedback: feedback,
+    human_touchpoints: [
+      ...run.human_touchpoints,
+      { principal_id: ctx.userId, action: "corrected", at: DEMO_NOW_ISO, note: feedback.human_determination },
+    ],
+  });
+  return { ok: true };
+}
+
+function titleCase(s: string): string {
+  return s.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ---------------------------------------------------------------------------

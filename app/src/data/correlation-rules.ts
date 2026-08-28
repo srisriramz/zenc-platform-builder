@@ -14,6 +14,8 @@ export type SeededRule = Omit<CorrelationRule, "definition"> & {
   /** alert title + one-line summary the fired alert-envelope inherits */
   alert_title: string;
   alert_summary: (matchCount: number, groupValue: string | undefined) => string;
+  /** labelled ground-truth match count for regression scoring (the planted scenarios) */
+  expected_test_matches?: number;
 };
 
 const HUMAN = "user-marcus-senior";
@@ -79,6 +81,7 @@ export const CORRELATION_RULES: SeededRule[] = [
     },
     alert_title: "Credential brute force from a single source address",
     alert_summary: (n, key) => `${n} failed authentications from ${key ?? "one address"} within a 10-minute window.`,
+    expected_test_matches: 2,
   },
   {
     rule_id: "rule-nwb-brute-then-success",
@@ -110,6 +113,7 @@ export const CORRELATION_RULES: SeededRule[] = [
     },
     alert_title: "Possible successful brute force",
     alert_summary: (n, key) => `Account ${key ?? "(unknown)"} authenticated successfully after ${n - 1}+ failures within 30 minutes.`,
+    expected_test_matches: 2,
   },
   {
     rule_id: "rule-nwb-external-port-scan",
@@ -136,6 +140,7 @@ export const CORRELATION_RULES: SeededRule[] = [
     },
     alert_title: "External scan against the perimeter firewall",
     alert_summary: (n, key) => `${n} denied connections from ${key ?? "one external address"} in 5 minutes — consistent with scanning.`,
+    expected_test_matches: 1,
   },
   {
     rule_id: "rule-nwb-cloud-guardrail-off",
@@ -265,6 +270,7 @@ export const CORRELATION_RULES: SeededRule[] = [
     },
     alert_title: "Broad PowerShell activity",
     alert_summary: (n, key) => `${n} PowerShell script-block events for ${key ?? "one account"} in an hour.`,
+    expected_test_matches: 6, // it observes far more — noisy, hence disabled
   },
 
   // ---- Northwind Markets ----

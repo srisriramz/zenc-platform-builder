@@ -56,6 +56,7 @@ export const regressionTestResult = z.object({
   execution_time_ms: z.number().optional(),
   rule_health: z.enum(["healthy", "needs_tuning", "failing"]),
 });
+export type RegressionTestResult = z.infer<typeof regressionTestResult>;
 
 export const correlationRuleSchema = z
   .object({

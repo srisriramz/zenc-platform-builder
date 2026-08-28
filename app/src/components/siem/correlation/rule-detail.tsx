@@ -1,11 +1,13 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
-import { ArrowUpRight, Lock, X } from "lucide-react";
-import { useRuleDetail } from "@/hooks/use-siem";
+import { ArrowUpRight, Loader2, Lock, X } from "lucide-react";
+import { useRuleDetail, useRunRegression, useTransitionRule } from "@/hooks/use-siem";
 import { drillHref } from "@/lib/use-nav";
 import type { RuleDefinition } from "@/lib/correlation/types";
 import type { EventMatch } from "@/lib/correlation/match";
+import type { RuleLifecycleState } from "@/schemas";
 import { formatTimestamp } from "@/lib/time";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
@@ -15,15 +17,40 @@ import { LoadingState, QueryErrorState } from "@/components/states";
 
 const LIFECYCLE = ["draft", "test", "peer_review", "approved", "enabled", "disabled", "retired"] as const;
 
+const TRANSITION_LABEL: Record<string, string> = {
+  test: "Run regression & advance",
+  peer_review: "Submit for peer review",
+  approved: "Approve (peer review)",
+  enabled: "Enable",
+  disabled: "Disable",
+  retired: "Retire",
+  draft: "Send back to draft",
+};
+
 export function RuleDetail({ ruleId, onClose }: { ruleId: string; onClose: () => void }) {
   const q = useRuleDetail(ruleId);
+  const regression = useRunRegression();
+  const transition = useTransitionRule();
+  const [err, setErr] = React.useState<string | null>(null);
+
   if (q.isLoading) return <Card><CardContent className="pt-5"><LoadingState label="Loading rule…" /></CardContent></Card>;
   if (q.isError || !q.data) return <QueryErrorState error={q.error} onRetry={() => q.refetch()} />;
 
-  const { rule, alerts } = q.data;
+  const { rule, alerts, agent_runs } = q.data;
   const def = rule.definition as unknown as RuleDefinition;
   const reg = rule.regression_test_results?.[rule.regression_test_results.length - 1];
   const currentStageIdx = LIFECYCLE.indexOf(rule.lifecycle_state);
+  const busy = regression.isPending || transition.isPending;
+
+  const act = (to: RuleLifecycleState) => {
+    setErr(null);
+    const onError = (e: unknown) => setErr(e instanceof Error ? e.message : "Transition failed.");
+    if (to === "test" && rule.lifecycle_state === "draft") {
+      regression.mutate(rule.rule_id, { onError });
+    } else {
+      transition.mutate({ ruleId: rule.rule_id, to }, { onError });
+    }
+  };
 
   return (
     <Card className="border-primary/40">
@@ -62,15 +89,53 @@ export function RuleDetail({ ruleId, onClose }: { ruleId: string; onClose: () =>
           ))}
         </div>
 
-        {rule.lifecycle_state !== "enabled" && (
-          <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-            <Lock className="mt-0.5 size-3.5 flex-none" />
-            <span>
-              The transition to <span className="font-medium text-foreground">enabled</span> is a human-only action —
-              enforced at the schema/validation layer, not just the UI. The Detection Engineer Agent can propose, test,
-              and submit for review, but never enable. Full authoring + regression workflow arrives in{" "}
-              <span className="font-medium text-foreground">M3</span>.
-            </span>
+        {/* workflow actions — gated by the validation layer, not just shown/hidden */}
+        <div className="rounded-lg border border-border p-3">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Lock className="size-3.5" />
+            Workflow — the transition to <span className="text-foreground">enabled</span> is a human-only action, and no
+            one enables a rule they proposed or reviewed. Enforced at the validation layer.
+          </p>
+          {rule.allowed_transitions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {rule.is_agent_proposed && rule.lifecycle_state === "peer_review"
+                ? "This rule was proposed by the Detection Engineer Agent. A human with rule.review must approve it before it can be enabled — and someone other than the proposer."
+                : "No workflow action available to your role from this state."}
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {rule.allowed_transitions.map((to) => (
+                <Button
+                  key={to}
+                  size="sm"
+                  variant={to === "enabled" ? "default" : to === "draft" ? "ghost" : "outline"}
+                  disabled={busy}
+                  onClick={() => act(to)}
+                >
+                  {busy && (regression.variables === rule.rule_id || transition.variables?.to === to) && (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  )}
+                  {TRANSITION_LABEL[to] ?? to}
+                </Button>
+              ))}
+            </div>
+          )}
+          {err && <p className="mt-2 text-xs text-[var(--destructive)]">{err}</p>}
+        </div>
+
+        {agent_runs.length > 0 && (
+          <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+            <p className="mb-1 text-xs font-medium text-muted-foreground">Detection Engineer Agent</p>
+            {agent_runs.map((run) => (
+              <Link
+                key={run.agent_run_id}
+                href={drillHref(`/agents/runs/${run.agent_run_id}`, {})}
+                className="inline-flex items-center gap-1 hover:underline"
+              >
+                Proposal run — {run.outcome.replace(/_/g, " ")}
+                <ArrowUpRight className="size-3" />
+              </Link>
+            ))}
           </div>
         )}
 

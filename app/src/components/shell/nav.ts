@@ -20,6 +20,7 @@ import {
   Table2,
   Users,
   Waves,
+  Waypoints,
   Workflow,
 } from "lucide-react";
 import type { Permission } from "@/data/platform";
@@ -51,7 +52,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/soc-dashboard", label: "SOAR Dashboard", section: "SOAR", product: "soc", icon: Gauge, requires: "has_soc", permission: "soc.view", milestone: "M4" },
   { href: "/alerts", label: "Alert Intake", section: "SOAR", product: "soc", icon: Siren, requires: "has_soc", permission: "soc.view", milestone: "M4" },
   { href: "/cases", label: "Cases", section: "SOAR", product: "soc", icon: BriefcaseBusiness, requires: "has_soc", permission: "case.work", milestone: "M4" },
-  { href: "/agents/runs", label: "Agent Runs", section: "SOAR", product: "soc", icon: Workflow, requires: "has_soc", permission: "soc.view", milestone: "M4" },
+  { href: "/agents", label: "Agents", section: "SOAR", product: "soc", icon: Workflow, requires: "has_soc", permission: "soc.view" },
+  { href: "/agents/runs", label: "Agent Runs", section: "SOAR", product: "soc", icon: Waypoints, requires: "has_soc", permission: "soc.view" },
   { href: "/approvals", label: "Approval Queue", section: "SOAR", product: "soc", icon: BadgeCheck, requires: "has_soc", permission: "soc.view", milestone: "M4" },
   { href: "/playbooks", label: "Playbooks", section: "SOAR", product: "soc", icon: ScrollText, requires: "has_soc", permission: "soc.view", milestone: "M4" },
   { href: "/reporting", label: "SOAR Reporting", section: "SOAR", product: "soc", icon: Activity, requires: "has_soc", permission: "soc.view", milestone: "M5" },

@@ -3,7 +3,7 @@
  * deterministic seed layer. This stands in for a backend — no product reads
  * another product's data except through the contract types in `@/schemas`.
  */
-import type { AuditEvent, NormalizedEvent, RawEvent, TelemetrySource } from "@/schemas";
+import type { AgentMessage, AgentRun, AuditEvent, NormalizedEvent, RawEvent, TelemetrySource } from "@/schemas";
 import { DEMO_NOW_ISO, minus } from "@/lib/time";
 import {
   TENANTS,
@@ -115,6 +115,73 @@ function seedAudit(): AuditEvent[] {
   ];
 }
 
+function seedAgentActivity(): { runs: AgentRun[]; messages: AgentMessage[] } {
+  // The Detection Engineer Agent proposed rule-nwb-offhours-role-grant and
+  // escalated it to human peer review — it could not enable it.
+  const runId = "run-seed-de-0001";
+  const t = (daysAgo: number, hoursAgo = 0) => minus(DEMO_NOW_ISO, { days: daysAgo, hours: hoursAgo });
+  const messages: AgentMessage[] = [
+    {
+      message_id: "msg-seed-de-0001",
+      agent_run_id: runId,
+      agent_name: "detection-engineer-agent",
+      tenant_id: "tenant-northwind-bank",
+      occurred_at: t(9, 3),
+      prompt_version: "detection-engineer-agent-prompt-v2.3",
+      tool_version: "rule-read-tool-v1.2",
+      input_ref: "coverage-gap:T1078",
+      tool_calls: [{ tool_name: "rule-read", called_at: t(9, 3), scope_or_bound: "tenant rule catalog, 8 rules" }],
+      claim:
+        "Technique T1078 (Valid Accounts) has an enabled rule for the cloud sub-technique but no coverage for off-hours privileged role grants. Proposing a single-event rule.",
+      confidence: 0.58,
+      evidence: [{ evidence_ref: "coverage-matrix:T1078", supports: true, freshness: t(9, 3) }],
+      escalated: false,
+    },
+    {
+      message_id: "msg-seed-de-0002",
+      agent_run_id: runId,
+      agent_name: "detection-engineer-agent",
+      tenant_id: "tenant-northwind-bank",
+      occurred_at: t(9, 2),
+      prompt_version: "detection-engineer-agent-prompt-v2.3",
+      tool_version: "rule-test-tool-v1.0",
+      rule_or_playbook_version: "rule-nwb-offhours-role-grant-v0.2.0",
+      input_ref: "rule-nwb-offhours-role-grant",
+      tool_calls: [
+        { tool_name: "rule-draft", called_at: t(9, 2), scope_or_bound: "draft state only" },
+        { tool_name: "rule-test", called_at: t(9, 2), scope_or_bound: "synthetic corpus, 48k events" },
+      ],
+      claim:
+        "Draft tested against the synthetic corpus: 5 observed vs 4 expected, 1 missed, 2 unexpected — noise indicator 0.4. The rule fires but is noisier than the tenant threshold; recommend a human tune the time window or add an exclusion before enabling.",
+      confidence: 0.44,
+      evidence: [
+        { evidence_ref: "regression:rule-nwb-offhours-role-grant:v0.2.0", supports: true, freshness: t(9, 2) },
+        { evidence_ref: "regression:unexpected-matches", supports: false, freshness: t(9, 2) },
+      ],
+      escalated: true,
+      escalation_reason: "low_confidence",
+      policy_outcome: "handed to human peer-review queue — agent cannot advance past peer_review",
+    },
+  ];
+  const runs: AgentRun[] = [
+    {
+      agent_run_id: runId,
+      tenant_id: "tenant-northwind-bank",
+      case_id: "rule-nwb-offhours-role-grant",
+      subject_type: "detection_rule",
+      started_at: t(9, 3),
+      completed_at: t(9, 2),
+      message_ids: messages.map((m) => m.message_id),
+      total_tool_calls: 4,
+      elapsed_seconds: 3600,
+      human_touchpoints: [],
+      outcome: "escalated_pending_human",
+      analyst_feedback: null,
+    },
+  ];
+  return { runs, messages };
+}
+
 function assemble() {
   const { raw, normalized } = generateEvents();
   const telemetrySources = buildTelemetrySources(normalized);
@@ -145,6 +212,7 @@ function assemble() {
     correlationRules: CORRELATION_RULES,
     alerts,
     ruleFireCounts,
+    agentActivity: seedAgentActivity(),
     audit: seedAudit(),
     frameworks: {
       attackTactics: ATTACK_TACTICS,

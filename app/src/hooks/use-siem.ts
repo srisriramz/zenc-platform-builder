@@ -1,7 +1,11 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  askAgentToProposeRule,
+  fetchAgentRun,
+  fetchAgentRuns,
+  fetchAgents,
   fetchAlertDetail,
   fetchAlerts,
   fetchCorrelationRules,
@@ -11,10 +15,16 @@ import {
   fetchQuarantineQueue,
   fetchRuleDetail,
   fetchTelemetrySources,
+  proposeRule,
+  recordAnalystFeedback,
+  runRuleRegression,
   searchLogs,
+  transitionRule,
   type AlertFilter,
   type LogSearchInput,
+  type ProposeRuleInput,
 } from "@/mock/api";
+import type { AnalystFeedback, RuleLifecycleState } from "@/schemas";
 import { useSession } from "@/store/session";
 import { useSessionContext } from "./use-platform";
 
@@ -111,5 +121,86 @@ export function useAlertDetail(envelopeId: string | null) {
     queryKey: ["alert-detail", ctx?.tenantId, envelopeId],
     queryFn: () => fetchAlertDetail(ctx!, envelopeId!),
     enabled: !!ctx && !!envelopeId,
+  });
+}
+
+// ---- M3: agents + detection workflow -------------------------------------
+
+export function useAgents() {
+  const ctx = useSessionContext();
+  return useQuery({ queryKey: ["agents", ctx?.tenantId], queryFn: () => fetchAgents(ctx!), enabled: !!ctx, staleTime: 60_000 });
+}
+
+export function useAgentRuns() {
+  const ctx = useSessionContext();
+  return useQuery({ queryKey: ["agent-runs", ctx?.tenantId], queryFn: () => fetchAgentRuns(ctx!), enabled: !!ctx });
+}
+
+export function useAgentRun(runId: string | null) {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["agent-run", ctx?.tenantId, runId],
+    queryFn: () => fetchAgentRun(ctx!, runId!),
+    enabled: !!ctx && !!runId,
+  });
+}
+
+function useDetectionInvalidation() {
+  const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({ queryKey: ["correlation-rules"] });
+    qc.invalidateQueries({ queryKey: ["rule-detail"] });
+    qc.invalidateQueries({ queryKey: ["agent-runs"] });
+    qc.invalidateQueries({ queryKey: ["agent-run"] });
+    qc.invalidateQueries({ queryKey: ["alerts"] });
+    qc.invalidateQueries({ queryKey: ["detection-analytics"] });
+    qc.invalidateQueries({ queryKey: ["audit"] });
+  };
+}
+
+export function useProposeRule() {
+  const ctx = useSessionContext();
+  const invalidate = useDetectionInvalidation();
+  return useMutation({
+    mutationFn: (input: ProposeRuleInput) => proposeRule(ctx!, input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRunRegression() {
+  const ctx = useSessionContext();
+  const invalidate = useDetectionInvalidation();
+  return useMutation({
+    mutationFn: (ruleId: string) => runRuleRegression(ctx!, ruleId),
+    onSuccess: invalidate,
+  });
+}
+
+export function useTransitionRule() {
+  const ctx = useSessionContext();
+  const invalidate = useDetectionInvalidation();
+  return useMutation({
+    mutationFn: ({ ruleId, to, note }: { ruleId: string; to: RuleLifecycleState; note?: string }) =>
+      transitionRule(ctx!, ruleId, to, note),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAskAgentToProposeRule() {
+  const ctx = useSessionContext();
+  const invalidate = useDetectionInvalidation();
+  return useMutation({
+    mutationFn: (techniqueId: string) => askAgentToProposeRule(ctx!, techniqueId),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRecordFeedback() {
+  const ctx = useSessionContext();
+  const invalidate = useDetectionInvalidation();
+  return useMutation({
+    mutationFn: ({ runId, feedback }: { runId: string; feedback: AnalystFeedback }) =>
+      recordAnalystFeedback(ctx!, runId, feedback),
+    onSuccess: invalidate,
   });
 }

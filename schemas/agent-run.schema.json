@@ -11,7 +11,15 @@
   "properties": {
     "agent_run_id": { "type": "string" },
     "tenant_id": { "type": "string" },
-    "case_id": { "type": "string" },
+    "case_id": {
+      "type": "string",
+      "description": "The work item this run concerns. Usually a case_id; for a non-case run (e.g. the Detection Engineer Agent proposing a rule) it carries the subject id and `subject_type` disambiguates."
+    },
+    "subject_type": {
+      "type": "string",
+      "enum": ["case", "detection_rule", "playbook"],
+      "description": "What `case_id` refers to (added after the original shape; absent means 'case')."
+    },
     "started_at": { "type": "string", "format": "date-time" },
     "completed_at": { "type": "string", "format": "date-time" },
     "message_ids": {

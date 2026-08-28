@@ -12,6 +12,7 @@ export const auditAction = z.enum([
   "role_changed",
   "entitlement_changed",
   "playbook_state_changed",
+  "rule_state_changed",
   "kill_switch_toggled",
 ]);
 
@@ -21,6 +22,7 @@ export const auditTargetType = z.enum([
   "case",
   "assessment",
   "playbook",
+  "correlation_rule",
   "role",
   "entitlement",
   "policy",

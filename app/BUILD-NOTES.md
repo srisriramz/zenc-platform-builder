@@ -11,7 +11,7 @@ follow `templates/claude-code-bootstrap.md`.
 | **M0** | Scaffold + platform shell | ✅ done |
 | **M1** | SIEM foundation: telemetry, normalization, Log Explorer | ✅ done |
 | **M2** | Correlation engine + ATT&CK-mapped rules → alert-envelope | ✅ done |
-| M3 | Detection engineering *workflow* (agent proposes, live regression, human-only enable) | rule catalog + lifecycle done; authoring workflow pending |
+| **M3** | Detection engineering workflow — Detection Engineer Agent, rule lifecycle, /agents | ✅ done |
 | M4 | ZenC SOC: intake → triage → response, 12 agents, approvals | not started |
 | M5 | ATT&CK × D3FEND coverage matrix + SOC reporting | not started |
 
@@ -105,6 +105,42 @@ component API, no dependency on the CLI.
 - **SIEM Dashboard** and **Telemetry & Connectors** screens with connector
   health, ingestion lag, 24h volume, schema-validation failures, and the
   quarantine queue.
+## M3 — what's in
+
+- **Detection Engineer Agent** — the first agent. L2 autonomy, tool allowlist
+  `rule-read` / `rule-test` (synthetic corpus only) / `rule-draft` (draft
+  state only). It proposes and tests; it **cannot** enable a rule.
+- **`lib/detection/lifecycle.ts`** — the single enforcement point.
+  `validateTransition(rule, to, actor)`: an agent principal can only
+  draft → test → submit-for-review; the transition to `enabled` needs a
+  human with `rule.enable` who is **neither the proposer nor the approver**
+  (no self-approval, segregation of duties). The API calls this; the UI only
+  reflects what it returns (`allowed_transitions` on the rule view). 12
+  tests pin the enforcement.
+- **Regression** (`lib/detection/regression.ts`) — re-runs the engine for one
+  rule against the ~72h sample and reports evaluated / expected / observed /
+  missed / unexpected / noise / time / health, with an honest verdict.
+- **Mutable session state** (`mock/session-store.ts`) — rule transitions,
+  agent-proposed drafts, agent runs, analyst feedback, and a session audit
+  log, layered over the immutable seed; resets on reload (the demo's reset).
+- **Agent contract** — Zod mirrors for `agent-message` / `agent-run`;
+  `agent-run` gains an optional `subject_type` (`case` | `detection_rule`)
+  so a non-case agent run is representable (JSON schema bumped too). Audit
+  gains `rule_state_changed` / `correlation_rule`.
+- **Screens:**
+  - `/detections` — "Propose a rule" (structured builder, no code field),
+    "Ask the agent" (proposes a rule for an uncovered ATT&CK technique →
+    creates a run + a `peer_review` draft), and per-rule workflow actions
+    driven by `allowed_transitions`.
+  - `/agents` — the 12-agent roster (autonomy, exhaustive tool allowlist,
+    never-does). Only the Detection Engineer Agent is `live`.
+  - `/agents/runs` + `/agents/runs/[id]` — the explainability screen:
+    rationale, supporting vs contradictory evidence, tool calls (flagged if
+    outside the allowlist), escalation reason, policy outcome,
+    prompt/tool/rule versions, human touchpoints, and a structured
+    analyst-feedback form.
+- 12 lifecycle-enforcement tests + v1.2 schema tests. **99 tests total.**
+
 ## M2 — what's in
 
 - **Correlation engine** (`lib/correlation/`) — deterministic, LLM-free. Rule

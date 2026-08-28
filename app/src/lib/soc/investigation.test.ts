@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AlertEnvelope, Case, NormalizedEvent } from "@/schemas";
-import { investigateCase } from "./investigation";
+import { investigateCase, investigationNeedsHandoff, INVESTIGATION_HANDOFF_CONFIDENCE } from "./investigation";
 
 const evalCtx = { familyOf: () => "windows" as const };
 
@@ -57,6 +57,17 @@ describe("investigateCase", () => {
     const [finding] = investigateCase(theCase, [alert], [], evalCtx);
     expect(finding.matched_count).toBe(0);
     expect(finding.summary).toMatch(/stands on the source/i);
+  });
+
+  it("signals a hand-off when its confidence is below the threshold", () => {
+    // a zero-match finding sits at 0.35, under the 0.4 threshold
+    expect(investigationNeedsHandoff(investigateCase(theCase, [alert], [], evalCtx))).toBe(true);
+    // a well-corroborated finding clears it
+    const events = Array.from({ length: 40 }, (_, i) =>
+      ev({ event_id: `e-${i}`, tenant_id: "t1", occurred_at: "2026-08-28T05:00:00.000Z" }),
+    );
+    expect(investigationNeedsHandoff(investigateCase(theCase, [alert], events, evalCtx))).toBe(false);
+    expect(INVESTIGATION_HANDOFF_CONFIDENCE).toBeGreaterThan(0);
   });
 
   it("the query is built from the safe field allowlist — never raw text", () => {

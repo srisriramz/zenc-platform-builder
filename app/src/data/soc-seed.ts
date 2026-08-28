@@ -5,7 +5,7 @@ import { ROLES, USERS, TENANT_MAP } from "@/data/platform";
 import { runIntake } from "@/lib/soc/intake";
 import { groupIntoCases } from "@/lib/soc/grouping";
 import { triageCandidate } from "@/lib/soc/triage";
-import { investigateCase } from "@/lib/soc/investigation";
+import { investigateCase, investigationConfidence, investigationNeedsHandoff } from "@/lib/soc/investigation";
 import { adviseCase } from "@/lib/soc/advisor";
 import { enrichCase } from "@/lib/soc/enrichment";
 import type { EvalContext } from "@/lib/query/evaluate";
@@ -157,6 +157,7 @@ function simpleRun(
     supporting?: string[];
     contradictory?: string[];
     escalated?: boolean;
+    escalationReason?: AgentMessage["escalation_reason"];
     policyOutcome?: string;
     elapsed: number;
   },
@@ -178,7 +179,7 @@ function simpleRun(
       ...(opts.contradictory ?? []).map((e) => ({ evidence_ref: e, supports: false, freshness: opts.at })),
     ],
     escalated: opts.escalated,
-    escalation_reason: opts.escalated ? "policy_ambiguous_or_absent" : undefined,
+    escalation_reason: opts.escalated ? opts.escalationReason ?? "policy_ambiguous_or_absent" : undefined,
     policy_outcome: opts.policyOutcome,
   };
   const run: AgentRun = {
@@ -192,7 +193,7 @@ function simpleRun(
     total_tool_calls: opts.toolCalls.length,
     elapsed_seconds: opts.elapsed,
     human_touchpoints: [],
-    outcome: "completed",
+    outcome: opts.escalated ? "escalated_pending_human" : "completed",
     analyst_feedback: null,
   };
   return { run, message };
@@ -241,6 +242,7 @@ function investigationLayerForCase(
 
   // 2. Investigation run — findings become submitted evidence in custody
   const findings = investigateCase(theCase, linkedAlerts, events, evalCtx);
+  const investHandoff = investigationNeedsHandoff(findings);
   const investAt = minus(t, { minutes: -12 });
   const investRun = simpleRun({
     agentName: "investigation-agent",
@@ -255,12 +257,17 @@ function investigationLayerForCase(
       { tool_name: "log-search", scope_or_bound: `≤5000 events, ≤24h, ${findings.length} bounded quer${findings.length === 1 ? "y" : "ies"}` },
     ],
     claim:
-      findings.length === 0
+      (findings.length === 0
         ? "Ran bounded queries for the case entities; no corroborating telemetry in the sample. The case rests on the source alert."
-        : `Ran ${findings.length} bounded, source-cited quer${findings.length === 1 ? "y" : "ies"}. Drafted ${findings.length} finding(s) as submitted evidence — each cites the events it rests on.`,
-    confidence: findings.length ? Math.max(...findings.map((f) => f.confidence)) : 0.35,
+        : `Ran ${findings.length} bounded, source-cited quer${findings.length === 1 ? "y" : "ies"}. Drafted ${findings.length} finding(s) as submitted evidence — each cites the events it rests on.`) +
+      (investHandoff ? " Confidence is below the hand-off threshold — escalating to a human." : ""),
+    confidence: findings.length ? investigationConfidence(findings) : 0.35,
     supporting: findings.map((f) => `finding ${f.finding_id}: ${f.matched_count} events`),
-    policyOutcome: "findings written as evidence in 'submitted' state — a human reviews before they count",
+    escalated: investHandoff || undefined,
+    escalationReason: investHandoff ? "low_confidence" : undefined,
+    policyOutcome: investHandoff
+      ? "handed to a human — the finding is too weak to stand on its own"
+      : "findings written as evidence in 'submitted' state — a human reviews before they count",
     elapsed: 20,
   });
   runs.push(investRun.run);

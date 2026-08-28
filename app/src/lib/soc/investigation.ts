@@ -18,6 +18,24 @@ import { runQuery, type EvalContext } from "@/lib/query/evaluate";
 
 const WINDOW_HOURS = 24;
 const MAX_EVENTS = 5000;
+
+/**
+ * Below this, the Investigation Agent hands the case back to a human rather
+ * than completing silently (agentic-architecture.md escalation criteria —
+ * "its own stated confidence falls below the tenant-configured threshold").
+ * A fixed value here; a real deployment reads it from tenant policy.
+ */
+export const INVESTIGATION_HANDOFF_CONFIDENCE = 0.4;
+
+/** the agent's own confidence in the run — the max over its findings, or 0 with none */
+export function investigationConfidence(findings: InvestigationFinding[]): number {
+  return findings.length ? Math.max(...findings.map((f) => f.confidence)) : 0;
+}
+
+/** true when the run must escalate to a human instead of just completing */
+export function investigationNeedsHandoff(findings: InvestigationFinding[]): boolean {
+  return investigationConfidence(findings) < INVESTIGATION_HANDOFF_CONFIDENCE;
+}
 const QUERYABLE_ENTITY_FIELDS: Record<string, string> = {
   host: "entity.host",
   user: "entity.user",

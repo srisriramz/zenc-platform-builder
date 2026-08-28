@@ -66,7 +66,7 @@ import { caseIdFor } from "@/data/soc-seed";
 import { PLAYBOOKS, type SeededPlaybook } from "@/data/playbooks";
 import { enrichCase } from "@/lib/soc/enrichment";
 import { adviseCase } from "@/lib/soc/advisor";
-import { investigateCase } from "@/lib/soc/investigation";
+import { investigateCase, investigationConfidence, investigationNeedsHandoff } from "@/lib/soc/investigation";
 import { buildCaseTimeline } from "@/lib/soc/timeline";
 import { runHunt, type HuntInput } from "@/lib/soc/hunt";
 import { validatePlaybookTransition } from "@/lib/soc/playbook-lifecycle";
@@ -1721,6 +1721,7 @@ export async function runCaseAgent(ctx: SessionContext, caseId: string, agent: "
   });
 
   let message: AgentMessage;
+  let investigationHandoff = false;
   const newEvidenceIds: string[] = [];
 
   if (agent === "enrichment") {
@@ -1790,6 +1791,7 @@ export async function runCaseAgent(ctx: SessionContext, caseId: string, agent: "
         detail: `Investigation finding drafted (submitted, awaiting review) → case ${caseId}`,
       });
     }
+    const handoff = investigationNeedsHandoff(findings);
     message = mkMessage({
       agent_name: "investigation-agent",
       prompt_version: "investigation-agent-prompt-v1.0",
@@ -1798,13 +1800,20 @@ export async function runCaseAgent(ctx: SessionContext, caseId: string, agent: "
         { tool_name: "case-read", called_at: now, scope_or_bound: "the assigned case" },
         { tool_name: "log-search", called_at: now, scope_or_bound: `≤5000 events, ≤24h, ${findings.length} quer${findings.length === 1 ? "y" : "ies"}` },
       ],
-      claim: findings.length
-        ? `Ran ${findings.length} bounded, source-cited quer${findings.length === 1 ? "y" : "ies"}; drafted ${findings.length} finding(s) as submitted evidence.`
-        : "Ran bounded queries; no corroborating telemetry in the sample.",
-      confidence: findings.length ? Math.max(...findings.map((f) => f.confidence)) : 0.35,
+      claim:
+        (findings.length
+          ? `Ran ${findings.length} bounded, source-cited quer${findings.length === 1 ? "y" : "ies"}; drafted ${findings.length} finding(s) as submitted evidence.`
+          : "Ran bounded queries; no corroborating telemetry in the sample.") +
+        (handoff ? " Confidence is below the hand-off threshold — escalating to a human rather than proceeding." : ""),
+      confidence: findings.length ? investigationConfidence(findings) : 0.35,
       evidence: findings.map((f) => ({ evidence_ref: `finding: ${f.matched_count} events`, supports: true, freshness: now })),
-      policy_outcome: "findings written as evidence in 'submitted' state — a human reviews before they count",
+      escalated: handoff || undefined,
+      escalation_reason: handoff ? "low_confidence" : undefined,
+      policy_outcome: handoff
+        ? "handed to a human — the finding is too weak to stand on its own"
+        : "findings written as evidence in 'submitted' state — a human reviews before they count",
     });
+    investigationHandoff = handoff;
   }
 
   const run: AgentRun = {
@@ -1818,7 +1827,7 @@ export async function runCaseAgent(ctx: SessionContext, caseId: string, agent: "
     total_tool_calls: message.tool_calls.length,
     elapsed_seconds: agent === "investigation" ? 22 : 9,
     human_touchpoints: [{ principal_id: ctx.userId, action: "reviewed", at: now, note: `Invoked the ${agent} agent` }],
-    outcome: "completed",
+    outcome: investigationHandoff ? "escalated_pending_human" : "completed",
     analyst_feedback: null,
   };
   addAgentRun(run, [message]);

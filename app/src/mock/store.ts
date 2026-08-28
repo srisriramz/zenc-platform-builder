@@ -4,6 +4,7 @@
  * another product's data except through the contract types in `@/schemas`.
  */
 import type { AgentMessage, AgentRun, AuditEvent, NormalizedEvent, RawEvent, TelemetrySource } from "@/schemas";
+import { agentMessageSchema, agentRunSchema } from "@/schemas";
 import { DEMO_NOW_ISO, minus } from "@/lib/time";
 import {
   TENANTS,
@@ -208,6 +209,13 @@ function assemble() {
   const response = buildResponseLayer(soc.cases, socAlerts, PLAYBOOKS);
   const seededAgents = seedAgentActivity();
 
+  // Every seeded agent output validates against its contract — a malformed
+  // agent run or message never enters the store (schemas/agent.ts).
+  const agentRuns = [...seededAgents.runs, ...soc.agentRuns, ...response.runs].map((r) => agentRunSchema.parse(r));
+  const agentMessages = [...seededAgents.messages, ...soc.agentMessages, ...response.messages].map((m) =>
+    agentMessageSchema.parse(m),
+  );
+
   return {
     demoNowIso: DEMO_NOW_ISO,
     partners: PARTNERS,
@@ -236,10 +244,7 @@ function assemble() {
     playbooks: PLAYBOOKS,
     responsePlans: response.plans,
     actionRequests: response.actionRequests,
-    agentActivity: {
-      runs: [...seededAgents.runs, ...soc.agentRuns, ...response.runs],
-      messages: [...seededAgents.messages, ...soc.agentMessages, ...response.messages],
-    },
+    agentActivity: { runs: agentRuns, messages: agentMessages },
     audit: seedAudit(),
     frameworks: {
       attackTactics: ATTACK_TACTICS,

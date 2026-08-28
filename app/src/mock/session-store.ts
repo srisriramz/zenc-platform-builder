@@ -20,6 +20,7 @@ import type {
   Task,
   TaskStatus,
 } from "@/schemas";
+import { agentMessageSchema, agentRunSchema } from "@/schemas";
 import type { SeededRule } from "@/data/correlation-rules";
 import type { SeededPlaybook } from "@/data/playbooks";
 import type { ResponsePlan } from "@/lib/soc/response-planner";
@@ -164,9 +165,17 @@ export function updateProposedRule(ruleId: string, patch: Partial<SeededRule>): 
   if (i >= 0) _state.proposedRules[i] = { ...(_state.proposedRules[i] as SeededRule), ...patch } as SeededRule;
 }
 
+/**
+ * Every agent output is validated against its contract before it is stored —
+ * a malformed agent message or run is rejected here, never silently coerced
+ * (schemas/agent.ts, review-agent-safety.md "Explainability"). This is the
+ * single enforcement point for runtime-produced agent activity.
+ */
 export function addAgentRun(run: AgentRun, messages: AgentMessage[]): void {
-  _state.agentRuns.unshift(run);
-  _state.agentMessages.push(...messages);
+  const validRun = agentRunSchema.parse(run);
+  const validMessages = messages.map((m) => agentMessageSchema.parse(m));
+  _state.agentRuns.unshift(validRun);
+  _state.agentMessages.push(...validMessages);
 }
 
 export function updateAgentRun(runId: string, patch: Partial<AgentRun>): void {

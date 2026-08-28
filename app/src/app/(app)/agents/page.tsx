@@ -32,7 +32,9 @@ export default function AgentsPage() {
                   <span>{a.label}</span>
                   <span className="flex items-center gap-1.5">
                     <Badge variant="outline">{a.default_autonomy}</Badge>
-                    <Badge variant={a.status === "live" ? "success" : "outline"}>{a.status === "live" ? "live" : "M4"}</Badge>
+                    <Badge variant={a.status === "live" ? "success" : "outline"}>
+                      {a.status === "live" ? "live" : a.status === "m5" ? "M5" : "Phase 2"}
+                    </Badge>
                   </span>
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">{a.purpose}</p>

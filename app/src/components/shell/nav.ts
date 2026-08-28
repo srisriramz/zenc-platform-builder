@@ -24,6 +24,7 @@ import {
   Waves,
   Waypoints,
   Workflow,
+  Zap,
 } from "lucide-react";
 import type { Permission } from "@/data/platform";
 import type { ProductArea } from "@/store/session";
@@ -58,8 +59,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/hunt", label: "Threat Hunt", section: "SOAR", product: "soc", icon: Crosshair, requires: "has_soc", permission: "soc.view" },
   { href: "/agents", label: "Agents", section: "SOAR", product: "soc", icon: Workflow, requires: "has_soc", permission: "soc.view" },
   { href: "/agents/runs", label: "Agent Runs", section: "SOAR", product: "soc", icon: Waypoints, requires: "has_soc", permission: "soc.view" },
-  { href: "/approvals", label: "Approval Queue", section: "SOAR", product: "soc", icon: BadgeCheck, requires: "has_soc", permission: "soc.view", milestone: "M4" },
-  { href: "/playbooks", label: "Playbooks", section: "SOAR", product: "soc", icon: ScrollText, requires: "has_soc", permission: "soc.view", milestone: "M4" },
+  { href: "/playbooks", label: "Playbooks", section: "SOAR", product: "soc", icon: ScrollText, requires: "has_soc", permission: "soc.view" },
+  { href: "/approvals", label: "Approval Queue", section: "SOAR", product: "soc", icon: BadgeCheck, requires: "has_soc", permission: "soc.view" },
+  { href: "/actions", label: "Response Actions", section: "SOAR", product: "soc", icon: Zap, requires: "has_soc", permission: "soc.view" },
   { href: "/reporting", label: "SOAR Reporting", section: "SOAR", product: "soc", icon: Activity, requires: "has_soc", permission: "soc.view", milestone: "M5" },
 
   // ---- Analytics (cross-product reporting layer; degrades when a product is absent) ----

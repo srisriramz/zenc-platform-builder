@@ -9,3 +9,5 @@ export * from "./agent";
 export * from "./case";
 export * from "./task";
 export * from "./evidence";
+export * from "./playbook";
+export * from "./action-request";

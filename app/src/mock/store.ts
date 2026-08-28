@@ -19,6 +19,8 @@ import { deriveEntityRisk } from "@/data/entity-risk";
 import { CORRELATION_RULES } from "@/data/correlation-rules";
 import { THIRD_PARTY_ALERTS } from "@/data/third-party-alerts";
 import { buildSocLayer } from "@/data/soc-seed";
+import { buildResponseLayer } from "@/data/soc-seed-response";
+import { PLAYBOOKS } from "@/data/playbooks";
 import { runCorrelation } from "@/lib/correlation/engine";
 import { ATTACK_TECHNIQUES, ATTACK_TACTICS } from "@/data/frameworks/attack";
 import { D3FEND_TECHNIQUES } from "@/data/frameworks/d3fend";
@@ -203,6 +205,7 @@ function assemble() {
   // third-party fixtures, through the same path a live system would use.
   const socAlerts = [...alerts, ...THIRD_PARTY_ALERTS];
   const soc = buildSocLayer(socAlerts, normalized, (id) => familyMap.get(id));
+  const response = buildResponseLayer(soc.cases, socAlerts, PLAYBOOKS);
   const seededAgents = seedAgentActivity();
 
   return {
@@ -230,9 +233,12 @@ function assemble() {
     caseEvidence: soc.evidence,
     caseTasks: soc.tasks,
     candidateCaseId: soc.candidateCaseId,
+    playbooks: PLAYBOOKS,
+    responsePlans: response.plans,
+    actionRequests: response.actionRequests,
     agentActivity: {
-      runs: [...seededAgents.runs, ...soc.agentRuns],
-      messages: [...seededAgents.messages, ...soc.agentMessages],
+      runs: [...seededAgents.runs, ...soc.agentRuns, ...response.runs],
+      messages: [...seededAgents.messages, ...soc.agentMessages, ...response.messages],
     },
     audit: seedAudit(),
     frameworks: {

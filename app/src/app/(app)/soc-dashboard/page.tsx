@@ -56,11 +56,11 @@ export default function SocDashboardPage() {
           href={drillHref("/cases", { status: "" })}
         />
         <StatTile
-          label="Evidence pending review"
-          value={d.investigation.evidence_pending_review}
-          tone={d.investigation.evidence_pending_review ? "warning" : "success"}
-          sub={`${d.investigation.tasks_overdue} task(s) overdue`}
-          href="/evidence"
+          label="Approvals pending"
+          value={d.response.approvals_pending}
+          tone={d.response.approvals_pending ? "warning" : "success"}
+          sub={`${d.investigation.evidence_pending_review} evidence to review · ${d.investigation.tasks_overdue} task(s) overdue`}
+          href="/approvals"
         />
       </StatGrid>
 

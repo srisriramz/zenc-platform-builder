@@ -19,6 +19,9 @@ export const auditAction = z.enum([
   "alert_suppressed",
   "task_created",
   "task_updated",
+  "action_requested",
+  "action_verified",
+  "action_expired",
 ]);
 
 export const auditTargetType = z.enum([

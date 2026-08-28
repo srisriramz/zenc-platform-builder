@@ -2,12 +2,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  actionRequestSchema,
   alertEnvelopeSchema,
   auditEventSchema,
   caseSchema,
   correlationRuleSchema,
   evidenceSchema,
   normalizedEventSchema,
+  playbookSchema,
   taskSchema,
   telemetrySourceSchema,
 } from "./index";
@@ -28,6 +30,8 @@ describe("Zod schemas accept the repo's example fixtures", () => {
     ["sample-case.json", caseSchema],
     ["sample-evidence.json", evidenceSchema],
     ["sample-task.json", taskSchema],
+    ["sample-playbook.json", playbookSchema],
+    ["sample-action-request.json", actionRequestSchema],
   ];
 
   for (const [file, schema] of cases) {
@@ -130,5 +134,34 @@ describe("schema refinements enforce the non-negotiable invariants", () => {
     const { completed_by, ...rest } = t;
     void completed_by;
     expect(taskSchema.safeParse(rest).success).toBe(false);
+  });
+
+  it("an action request where the requester is also the approver is rejected (no self-approval)", () => {
+    const a = example("sample-action-request.json") as Record<string, unknown>;
+    const broken = { ...a, requested_by: { principal_id: "user-demo-soc-lead-01", principal_type: "human" } };
+    expect(actionRequestSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it("an A4 action advancing to executed with no approver is rejected", () => {
+    const a = example("sample-action-request.json") as Record<string, unknown>;
+    const { approved_by, ...rest } = a;
+    void approved_by;
+    expect(actionRequestSchema.safeParse({ ...rest, action_class: "A4", status: "executed" }).success).toBe(false);
+  });
+
+  it("an enabled playbook with no enabled_by is rejected", () => {
+    const p = example("sample-playbook.json") as Record<string, unknown>;
+    const { enabled_by, ...rest } = p;
+    void enabled_by;
+    expect(playbookSchema.safeParse(rest).success).toBe(false);
+  });
+
+  it("a playbook A3 step with neither a d3fend_mapping nor an unmapped marker is rejected", () => {
+    const p = example("sample-playbook.json") as Record<string, unknown>;
+    const broken = {
+      ...p,
+      steps: [{ step_id: "x", order: 1, action_class: "A3", description: "isolate", action_type: "isolate_host" }],
+    };
+    expect(playbookSchema.safeParse(broken).success).toBe(false);
   });
 });

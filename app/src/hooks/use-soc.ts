@@ -19,11 +19,26 @@ import {
   setCaseStatus,
   suppressCandidate,
   updateTaskStatus,
+  fetchPlaybooks,
+  fetchPlaybookDetail,
+  transitionPlaybook,
+  planCaseResponse,
+  requestAction,
+  fetchApprovalQueue,
+  approveAction,
+  denyAction,
+  executeActionRequest,
+  rollbackActionRequest,
+  fetchActionLog,
+  fetchCaseOrchestration,
+  fetchKillSwitches,
+  toggleKillSwitch,
   type AddEvidenceInput,
   type AddTaskInput,
   type CaseFilter,
+  type RequestActionInput,
 } from "@/mock/api";
-import type { CaseStatus, ClosureClassification, TaskStatus } from "@/schemas";
+import type { CaseStatus, ClosureClassification, PlaybookLifecycleState, TaskStatus } from "@/schemas";
 import type { HuntInput } from "@/lib/soc/hunt";
 import { useSession } from "@/store/session";
 import { useSessionContext } from "./use-platform";
@@ -75,17 +90,54 @@ export function useEvidenceQueue(filter: { state?: string } = {}) {
   });
 }
 
+export function usePlaybooks() {
+  const ctx = useSessionContext();
+  return useQuery({ queryKey: ["playbooks", ctx?.tenantId], queryFn: () => fetchPlaybooks(ctx!), enabled: !!ctx });
+}
+
+export function usePlaybookDetail(playbookId: string | null) {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["playbook-detail", ctx?.tenantId, playbookId],
+    queryFn: () => fetchPlaybookDetail(ctx!, playbookId!),
+    enabled: !!ctx && !!playbookId,
+  });
+}
+
+export function useApprovalQueue() {
+  const ctx = useSessionContext();
+  return useQuery({ queryKey: ["approval-queue", ctx?.tenantId], queryFn: () => fetchApprovalQueue(ctx!), enabled: !!ctx });
+}
+
+export function useActionLog() {
+  const ctx = useSessionContext();
+  return useQuery({ queryKey: ["action-log", ctx?.tenantId], queryFn: () => fetchActionLog(ctx!), enabled: !!ctx });
+}
+
+export function useCaseOrchestration(caseId: string | null) {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["case-orchestration", ctx?.tenantId, caseId],
+    queryFn: () => fetchCaseOrchestration(ctx!, caseId!),
+    enabled: !!ctx && !!caseId,
+  });
+}
+
+export function useKillSwitches() {
+  const ctx = useSessionContext();
+  return useQuery({ queryKey: ["kill-switches", ctx?.tenantId], queryFn: () => fetchKillSwitches(ctx!), enabled: !!ctx });
+}
+
 function useSocInvalidation() {
   const qc = useQueryClient();
   return () => {
-    qc.invalidateQueries({ queryKey: ["intake-queue"] });
-    qc.invalidateQueries({ queryKey: ["cases"] });
-    qc.invalidateQueries({ queryKey: ["case-detail"] });
-    qc.invalidateQueries({ queryKey: ["soc-dashboard"] });
-    qc.invalidateQueries({ queryKey: ["evidence-queue"] });
-    qc.invalidateQueries({ queryKey: ["agent-runs"] });
-    qc.invalidateQueries({ queryKey: ["agent-run"] });
-    qc.invalidateQueries({ queryKey: ["audit"] });
+    for (const k of [
+      "intake-queue", "cases", "case-detail", "soc-dashboard", "evidence-queue",
+      "agent-runs", "agent-run", "audit", "playbooks", "playbook-detail",
+      "approval-queue", "action-log", "case-orchestration", "kill-switches", "policies",
+    ]) {
+      qc.invalidateQueries({ queryKey: [k] });
+    }
   };
 }
 
@@ -192,6 +244,65 @@ export function useOpenCaseFromHunt() {
   const invalidate = useSocInvalidation();
   return useMutation({
     mutationFn: (input: { eventIds: string[]; title: string }) => openCaseFromHunt(ctx!, input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useTransitionPlaybook() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({
+    mutationFn: ({ playbookId, to, note }: { playbookId: string; to: PlaybookLifecycleState; note?: string }) =>
+      transitionPlaybook(ctx!, playbookId, to, note),
+    onSuccess: invalidate,
+  });
+}
+
+export function usePlanCaseResponse() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({ mutationFn: (caseId: string) => planCaseResponse(ctx!, caseId), onSuccess: invalidate });
+}
+
+export function useRequestAction() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({ mutationFn: (input: RequestActionInput) => requestAction(ctx!, input), onSuccess: invalidate });
+}
+
+export function useApproveAction() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({ mutationFn: (id: string) => approveAction(ctx!, id), onSuccess: invalidate });
+}
+
+export function useDenyAction() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => denyAction(ctx!, id, reason),
+    onSuccess: invalidate,
+  });
+}
+
+export function useExecuteAction() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({ mutationFn: (id: string) => executeActionRequest(ctx!, id), onSuccess: invalidate });
+}
+
+export function useRollbackAction() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({ mutationFn: (id: string) => rollbackActionRequest(ctx!, id), onSuccess: invalidate });
+}
+
+export function useToggleKillSwitch() {
+  const ctx = useSessionContext();
+  const invalidate = useSocInvalidation();
+  return useMutation({
+    mutationFn: ({ key, engaged, reason }: { key: string; engaged: boolean; reason?: string }) =>
+      toggleKillSwitch(ctx!, key, engaged, reason),
     onSuccess: invalidate,
   });
 }

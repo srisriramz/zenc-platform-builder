@@ -14,7 +14,7 @@ follow `templates/claude-code-bootstrap.md`.
 | **M3** | Detection engineering workflow — Detection Engineer Agent, rule lifecycle, /agents | ✅ done |
 | **M4a** | SOAR intake & triage — envelope intake, dedup, grouping, Triage Agent, cases | ✅ done |
 | **M4b** | SOAR investigation — evidence + custody, timeline, tasks/SLA, Enrichment/Investigation/Hunt/Advisor agents | ✅ done |
-| M4c | SOAR response — playbooks, approval queue (no self-approval), dry-run executor, kill switches | not started |
+| **M4c** | SOAR response — playbooks, Response Planner, approval queue, dry-run executor, kill switches, Supervisor + QA/Governance | ✅ done |
 | M5 | ATT&CK × D3FEND coverage matrix + SOC reporting | not started |
 
 ## Stack
@@ -246,6 +246,58 @@ component API, no dependency on the CLI.
   `alert` from M4a). 27 new SOAR tests (enrichment, investigation, advisor,
   hunt bounds, timeline). **144 tests total.**
 
+## M4c — what's in
+
+- **Playbooks** — `schemas/playbook.ts` (Zod); `lib/soc/playbook-lifecycle.ts`
+  is the single enforcement point, the response-side mirror of the rule
+  lifecycle: the Response Planner is confined to draft→test→peer_review;
+  `enabled` needs a human who is neither the proposer nor the reviewer who
+  approved it. 5 seeded playbooks per SOC tenant (contain endpoint,
+  compromised account, block C2, phishing, and an agent-proposed **A4
+  bulk-disable stuck at peer_review**). Every A2+ step carries a D3FEND
+  response mapping or an explicit `unmapped` marker.
+- **Response Planner Agent** (L2, `lib/soc/response-planner.ts`) —
+  deterministic. Matches the case's ATT&CK techniques to an enabled playbook,
+  resolves each step's target from the case entities, labels every step's
+  action class + approval requirement, and escalates every A3+ step to the
+  approval queue. Never enables a playbook, never executes.
+- **Action requests + approval queue** — `schemas/action-request.ts` with the
+  invariants as `.refine`s AND re-checked in `lib/soc/action-approval.ts`:
+  **requester ≠ approver** (no self-approval), `approved_by` must be human,
+  **A4 always needs a human approver regardless of policy**, an A3 skips
+  approval only if the tenant policy names that exact `action_type` (L3) and
+  then must cite `policy_basis`. `/approvals` shows A2/A3/A4 with escalating
+  colour; an approver who is the requester (or, for A4, the playbook author)
+  is blocked with the reason shown. Approved requests carry `expires_at` (4h)
+  and read back as `expired` once past it.
+- **Deterministic Response Executor** (`lib/soc/executor.ts`) — NOT an agent.
+  Only runs an `approved`, non-expired request: precondition re-check → 
+  **kill-switch halt** (global / partner / tenant — each stops pending AND
+  in-flight, so a multi-step playbook stops between steps) → idempotent
+  dry-run (re-execute = no-op returning the same result) → verification
+  record → rollback marker (reversible up front; irreversible flagged
+  before). Non-removable "DRY RUN" marker on every executed action.
+  `/actions` is the execution / verification / rollback log.
+- **Kill switches — live** — `toggleKillSwitch` (`admin.policy`; engaging
+  needs a documented reason), session overlay, audited. `/policies` toggles;
+  the executor reads the merged state.
+- **Supervisor + QA & Governance** (the last two of the 12, both read-only).
+  Supervisor summarises a case's agent routing and checks the invariants (no
+  agent approved/executed; no self-approval; every A3+ has a human approver
+  or policy basis). QA & Governance runs a schema / escalation / tool-allowlist
+  / evidence / handoff / outcome-consistency check on every agent run,
+  shown as pass/flag on `/agents/runs/[id]`.
+- **`evidence.review` → approver** so every SOC tenant has a reviewer; no
+  role bundles `case.work` + `evidence.review` (test-pinned).
+- **Screens** — `/playbooks`, `/actions` new; `/approvals` real;
+  `/cases/[id]` Response tab (Supervisor summary + plan + per-step request +
+  execute); `/policies` kill switches toggle; `/agents` marks Response
+  Planner / Supervisor / QA & Governance **live** (only Reporting → M5 and
+  Assessment Assistant → Phase 2 remain).
+- Audit gains `action_requested` / `action_verified` / `action_expired`. 34
+  new SOAR tests (playbook lifecycle, approval, executor incl. kill-switch
+  halt + idempotency + rollback, planner, QA verdicts, schema invariants). **184 tests.**
+
 ## M2 — what's in
 
 - **Correlation engine** (`lib/correlation/`) — deterministic, LLM-free. Rule
@@ -320,7 +372,7 @@ component API, no dependency on the CLI.
 
 ## Tests
 
-Vitest, pure-function coverage on the load-bearing pieces (144 tests):
+Vitest, pure-function coverage on the load-bearing pieces (184 tests):
 
 - `src/lib/query/parser.test.ts` — the safe query parser: valid grammar,
   injection/code rejection (`;`, `$(…)`, backticks, `--`, `/* */`, `\x`),
@@ -353,5 +405,5 @@ npm install
 npm run dev       # http://localhost:3000
 npm run build     # production build — passes clean
 npm run lint      # ESLint — passes clean
-npm test          # Vitest — 144 tests, passes clean
+npm test          # Vitest — 184 tests, passes clean
 ```

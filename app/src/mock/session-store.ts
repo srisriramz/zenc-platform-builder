@@ -6,6 +6,7 @@
  * demo's "reset" behaviour.
  */
 import type {
+  ActionRequest,
   AgentMessage,
   AgentRun,
   AuditEvent,
@@ -13,12 +14,15 @@ import type {
   CaseStatus,
   Evidence,
   EvidenceReviewState,
+  PlaybookLifecycleState,
   RegressionTestResult,
   RuleLifecycleState,
   Task,
   TaskStatus,
 } from "@/schemas";
 import type { SeededRule } from "@/data/correlation-rules";
+import type { SeededPlaybook } from "@/data/playbooks";
+import type { ResponsePlan } from "@/lib/soc/response-planner";
 
 export interface RuleOverride {
   lifecycle_state?: RuleLifecycleState;
@@ -62,12 +66,35 @@ export interface IntakeDecision {
   case_id?: string;
 }
 
+export interface PlaybookOverride {
+  lifecycle_state?: PlaybookLifecycleState;
+  enabled_by?: string;
+  version?: string;
+  history?: SeededPlaybook["history"];
+}
+
+export interface KillSwitchOverride {
+  engaged: boolean;
+  engaged_reason?: string;
+}
+
 interface SessionState {
   ruleOverrides: Map<string, RuleOverride>;
   proposedRules: SeededRule[];
   agentRuns: AgentRun[];
   agentMessages: AgentMessage[];
   audit: AuditEvent[];
+  /** playbook lifecycle transitions during the demo */
+  playbookOverrides: Map<string, PlaybookOverride>;
+  proposedPlaybooks: SeededPlaybook[];
+  /** response plans produced by the Response Planner, keyed by case_id */
+  responsePlans: Map<string, ResponsePlan>;
+  /** action requests created during the demo */
+  actionRequests: ActionRequest[];
+  /** mutations to seeded or created action requests, keyed by action_request_id */
+  actionRequestOverrides: Map<string, Partial<ActionRequest>>;
+  /** kill-switch state overlay: "global" | `partner:<id>` | `tenant:<id>` */
+  killSwitchOverrides: Map<string, KillSwitchOverride>;
   /** cases created during the demo by confirming an intake candidate */
   openedCases: Case[];
   /** mutations to seeded or opened cases (status, owner, closure) */
@@ -101,6 +128,12 @@ function fresh(): SessionState {
     evidenceReviews: new Map(),
     addedTasks: [],
     taskOverrides: new Map(),
+    playbookOverrides: new Map(),
+    proposedPlaybooks: [],
+    responsePlans: new Map(),
+    actionRequests: [],
+    actionRequestOverrides: new Map(),
+    killSwitchOverrides: new Map(),
   };
 }
 
@@ -174,4 +207,32 @@ export function addTask(t: Task): void {
 export function upsertTaskOverride(taskId: string, patch: TaskOverride): void {
   const prev = _state.taskOverrides.get(taskId) ?? {};
   _state.taskOverrides.set(taskId, { ...prev, ...patch });
+}
+
+// ---- M4c: playbooks, response plans, action requests, kill switches ----
+
+export function upsertPlaybookOverride(playbookId: string, patch: PlaybookOverride): void {
+  const prev = _state.playbookOverrides.get(playbookId) ?? {};
+  _state.playbookOverrides.set(playbookId, { ...prev, ...patch });
+}
+
+export function addProposedPlaybook(pb: SeededPlaybook): void {
+  _state.proposedPlaybooks.push(pb);
+}
+
+export function setResponsePlan(caseId: string, plan: ResponsePlan): void {
+  _state.responsePlans.set(caseId, plan);
+}
+
+export function addActionRequest(req: ActionRequest): void {
+  _state.actionRequests.push(req);
+}
+
+export function upsertActionRequestOverride(id: string, patch: Partial<ActionRequest>): void {
+  const prev = _state.actionRequestOverrides.get(id) ?? {};
+  _state.actionRequestOverrides.set(id, { ...prev, ...patch });
+}
+
+export function setKillSwitchOverride(key: string, patch: KillSwitchOverride): void {
+  _state.killSwitchOverrides.set(key, patch);
 }

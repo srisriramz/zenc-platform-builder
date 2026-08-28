@@ -116,6 +116,42 @@ export function TaskStatusBadge({ status, className }: { status: TaskStatus; cla
   );
 }
 
+const ACTION_CLASS_STYLE: Record<string, { variant: Parameters<typeof Badge>[0]["variant"]; label: string }> = {
+  A0: { variant: "outline", label: "A0 · reasoning" },
+  A1: { variant: "outline", label: "A1 · read-only" },
+  A2: { variant: "info", label: "A2 · reversible internal" },
+  A3: { variant: "warning", label: "A3 · security control" },
+  A4: { variant: "danger", label: "A4 · broad / privileged" },
+};
+
+export function ActionClassBadge({ actionClass, className }: { actionClass: string; className?: string }) {
+  const s = ACTION_CLASS_STYLE[actionClass] ?? { variant: "outline" as const, label: actionClass };
+  return (
+    <Badge variant={s.variant} className={className}>
+      {s.label}
+    </Badge>
+  );
+}
+
+const ACTION_STATUS_STYLE: Record<string, Parameters<typeof Badge>[0]["variant"]> = {
+  draft: "outline",
+  pending_approval: "warning",
+  approved: "info",
+  denied: "danger",
+  expired: "outline",
+  executed: "primary",
+  verified: "success",
+  rolled_back: "outline",
+};
+
+export function ActionStatusBadge({ status, className }: { status: string; className?: string }) {
+  return (
+    <Badge variant={ACTION_STATUS_STYLE[status] ?? "outline"} className={cn("capitalize", className)}>
+      {status.replace(/_/g, " ")}
+    </Badge>
+  );
+}
+
 export function FamilyLabel({ family }: { family: string }) {
   const map: Record<string, string> = {
     windows: "Windows",

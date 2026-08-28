@@ -103,8 +103,14 @@ export interface Entitlements {
 export interface TenantPolicy {
   /** default autonomy ceiling for newly-added agent capability */
   default_autonomy_level: "L1" | "L2" | "L3" | "L4";
-  /** action classes this tenant policy pre-authorises without per-request approval */
+  /** action classes this tenant policy pre-authorises without per-request approval (A2 granularity is fine; A3 is not) */
   pre_authorized_action_classes: ("A0" | "A1" | "A2" | "A3" | "A4")[];
+  /**
+   * The exact A3 action types this tenant has explicitly pre-authorized for L3
+   * auto-execution. Empty by default — every A3 needs approval until a tenant
+   * names a specific action type here. A4 is never eligible.
+   */
+  l3_preauthorized_action_types: string[];
   /** rule promotion always requires one independent human approver — not tenant-configurable */
   rule_promotion_requires_independent_human_approval: true;
   /** self-approval is never permitted — not tenant-configurable */
@@ -152,6 +158,7 @@ export const PARTNERS: Partner[] = [
 const basePolicy = (): TenantPolicy => ({
   default_autonomy_level: "L2",
   pre_authorized_action_classes: ["A0", "A1"],
+  l3_preauthorized_action_types: [],
   rule_promotion_requires_independent_human_approval: true,
   self_approval_permitted: false,
   kill_switch: { scope: "tenant", engaged: false },

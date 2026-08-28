@@ -9,6 +9,7 @@
  */
 import { getStore } from "./store";
 import {
+  addActionRequest,
   addAgentRun,
   addEvidence,
   addOpenedCase,
@@ -17,10 +18,14 @@ import {
   appendAudit,
   getSession,
   recordIntakeDecision,
+  setKillSwitchOverride,
+  setResponsePlan,
   updateAgentRun,
   updateProposedRule,
+  upsertActionRequestOverride,
   upsertCaseOverride,
   upsertEvidenceReview,
+  upsertPlaybookOverride,
   upsertRuleOverride,
   upsertTaskOverride,
 } from "./session-store";
@@ -33,7 +38,7 @@ import { runCorrelation, type CorrelationContext } from "@/lib/correlation/engin
 import { CORRELATION_RULES, type SeededRule } from "@/data/correlation-rules";
 import { AGENTS } from "@/data/agents";
 import { ATTACK_TECHNIQUE_MAP } from "@/data/frameworks/attack";
-import { ROLES, TENANT_MAP } from "@/data/platform";
+import { PARTNERS, ROLES, TENANT_MAP } from "@/data/platform";
 import { dailyVolumeSeries } from "@/data/ingestion-profile";
 import { DEMO_NOW_ISO, minus, secondsBetween } from "@/lib/time";
 import type {
@@ -45,21 +50,31 @@ import type {
   CaseStatus,
   ClosureClassification,
   CorrelationRule,
+  ActionRequest,
+  ActionRequestStatus,
   Evidence,
   NormalizedEvent,
+  PlaybookLifecycleState,
   RuleLifecycleState,
   Task,
   TaskStatus,
 } from "@/schemas";
-import { caseSchema, evidenceSchema, taskSchema } from "@/schemas";
+import { actionRequestSchema, caseSchema, evidenceSchema, taskSchema } from "@/schemas";
 import type { RuleDefinition } from "@/lib/correlation/types";
 import type { CaseCandidate, IntakeItem, TriageResult } from "@/lib/soc/types";
 import { caseIdFor } from "@/data/soc-seed";
+import { PLAYBOOKS, type SeededPlaybook } from "@/data/playbooks";
 import { enrichCase } from "@/lib/soc/enrichment";
 import { adviseCase } from "@/lib/soc/advisor";
 import { investigateCase } from "@/lib/soc/investigation";
 import { buildCaseTimeline } from "@/lib/soc/timeline";
 import { runHunt, type HuntInput } from "@/lib/soc/hunt";
+import { validatePlaybookTransition } from "@/lib/soc/playbook-lifecycle";
+import { planResponse } from "@/lib/soc/response-planner";
+import { approvalRequirement, canApprove, type ApprovalPolicy } from "@/lib/soc/action-approval";
+import { executeAction as runExecutor, rollbackAction as runRollback, isReversible } from "@/lib/soc/executor";
+import { summarizeCaseOrchestration } from "@/lib/soc/supervisor";
+import { reviewAgentRun } from "@/lib/soc/qa-governance";
 import { hashString } from "@/lib/prng";
 
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
@@ -416,7 +431,12 @@ export async function fetchAgentRun(ctx: SessionContext, runId: string) {
   const messages = [...getSession().agentMessages, ...store.agentActivity.messages]
     .filter((m) => m.agent_run_id === runId)
     .sort((a, b) => Date.parse(a.occurred_at) - Date.parse(b.occurred_at));
-  return { run, messages, rule: run.subject_type === "detection_rule" ? getMergedRule(ctx.tenantId, run.case_id) ?? null : null };
+  return {
+    run,
+    messages,
+    rule: run.subject_type === "detection_rule" ? getMergedRule(ctx.tenantId, run.case_id) ?? null : null,
+    qa: reviewAgentRun(run, messages),
+  };
 }
 
 export interface ProposeRuleInput {
@@ -1152,10 +1172,20 @@ export async function fetchCaseDetail(ctx: SessionContext, caseId: string) {
 
   const timeline = buildCaseTimeline({ theCase, linkedAlerts, evidence, tasks, agentRuns, statusChanges });
 
+  // M4c — response layer for this case
+  const responsePlan = mergedPlanFor(caseId);
+  const caseActionRequests = mergedActionRequests(ctx.tenantId).filter((r) => r.case_id === caseId);
+  const orchestration = summarizeCaseOrchestration(caseId, agentRuns, caseActionRequests);
+
   return {
     case: theCase,
     allowed_transitions: theCase.status === "closed" ? (["reopened"] as CaseStatus[]) : CASE_TRANSITIONS[theCase.status] ?? [],
     can_close: theCase.status !== "closed" && theCase.status !== "new",
+    responsePlan,
+    actionRequests: caseActionRequests,
+    orchestration,
+    can_plan_response: can(ctx, "case.work") && theCase.status !== "closed",
+    can_request_action: can(ctx, "action.request"),
     linkedAlerts,
     techniqueBreakdown: [...byTechnique.values()],
     candidate,
@@ -1253,6 +1283,10 @@ export async function fetchSocDashboard(ctx: SessionContext) {
       evidence_pending_review: evidencePendingReview,
       open_tasks: openTasks.length,
       tasks_overdue: tasksOverdue,
+    },
+    response: {
+      approvals_pending: mergedActionRequests(ctx.tenantId).filter((r) => r.status === "pending_approval").length,
+      actions_executed: mergedActionRequests(ctx.tenantId).filter((r) => r.status === "executed" || r.status === "verified").length,
     },
     workload: Object.entries(workload)
       .map(([owner_id, open_cases]) => ({ owner_id, open_cases }))
@@ -1898,4 +1932,537 @@ export async function openCaseFromHunt(ctx: SessionContext, input: { eventIds: s
     detail: `Opened from a hunt result — ${events.length} event(s)`,
   });
   return { case_id: caseId };
+}
+
+// ---------------------------------------------------------------------------
+// M4c — SOAR response: playbooks, planning, approvals, execution, kill switches
+// ---------------------------------------------------------------------------
+
+function approvalPolicyFor(tenantId: string): ApprovalPolicy {
+  const p = TENANT_MAP[tenantId]?.policy;
+  return {
+    default_autonomy_level: p?.default_autonomy_level ?? "L2",
+    pre_authorized_action_classes: p?.pre_authorized_action_classes ?? ["A0", "A1"],
+    l3_preauthorized_action_types: p?.l3_preauthorized_action_types ?? [],
+  };
+}
+
+// ---- kill switches -----------------------------------------------------------
+
+interface KillSwitchView {
+  key: string;
+  scope: "global" | "partner" | "tenant";
+  label: string;
+  engaged: boolean;
+  engaged_reason?: string;
+}
+
+function killSwitchViews(): KillSwitchView[] {
+  const ov = getSession().killSwitchOverrides;
+  const store = getStore();
+  const g = ov.get("global");
+  const views: KillSwitchView[] = [
+    {
+      key: "global",
+      scope: "global",
+      label: "Global",
+      engaged: g ? g.engaged : store.killSwitches.global.engaged,
+      engaged_reason: g ? g.engaged_reason : store.killSwitches.global.engaged_reason,
+    },
+  ];
+  for (const partner of PARTNERS) {
+    const o = ov.get(`partner:${partner.partner_id}`);
+    views.push({
+      key: `partner:${partner.partner_id}`,
+      scope: "partner",
+      label: `Partner - ${partner.name}`,
+      engaged: o ? o.engaged : partner.kill_switch.engaged,
+      engaged_reason: o ? o.engaged_reason : partner.kill_switch.engaged_reason,
+    });
+  }
+  for (const t of Object.values(TENANT_MAP)) {
+    const o = ov.get(`tenant:${t.tenant_id}`);
+    views.push({
+      key: `tenant:${t.tenant_id}`,
+      scope: "tenant",
+      label: `Tenant - ${t.name}`,
+      engaged: o ? o.engaged : t.policy.kill_switch.engaged,
+      engaged_reason: o ? o.engaged_reason : t.policy.kill_switch.engaged_reason,
+    });
+  }
+  return views;
+}
+
+/** the kill-switch booleans that apply to one tenant's action execution */
+function killSwitchGateFor(tenantId: string): { global: boolean; partner: boolean; tenant: boolean; engaged_reason?: string } {
+  const views = killSwitchViews();
+  const global = views.find((v) => v.key === "global")!;
+  const tenant = TENANT_MAP[tenantId];
+  const partner = views.find((v) => v.scope === "partner" && v.key === `partner:${tenant?.partner_id}`);
+  const tenantView = views.find((v) => v.key === `tenant:${tenantId}`);
+  const reason = [global, partner, tenantView].find((v) => v?.engaged)?.engaged_reason;
+  return {
+    global: global.engaged,
+    partner: !!partner?.engaged,
+    tenant: !!tenantView?.engaged,
+    engaged_reason: reason,
+  };
+}
+
+export async function fetchKillSwitches(ctx: SessionContext) {
+  await gate("kill-switches", 90);
+  if (!can(ctx, "admin.policy") && !can(ctx, "soc.view") && !can(ctx, "audit.view")) assertCan(ctx, "soc.view");
+  return { switches: killSwitchViews(), can_toggle: can(ctx, "admin.policy") };
+}
+
+export async function toggleKillSwitch(ctx: SessionContext, key: string, engaged: boolean, reason?: string) {
+  await gate("toggle-kill-switch", 140);
+  assertCan(ctx, "admin.policy");
+  if (!killSwitchViews().some((v) => v.key === key)) throw new AccessError("permission_denied", "Unknown kill switch.");
+  if (engaged && !reason?.trim()) throw new AccessError("permission_denied", "Engaging a kill switch needs a documented reason.");
+  const now = DEMO_NOW_ISO;
+  setKillSwitchOverride(key, { engaged, engaged_reason: engaged ? reason?.trim() : undefined });
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "kill_switch_toggled",
+    target_type: "policy",
+    target_id: key,
+    detail: `${key} ${engaged ? `ENGAGED - "${reason?.trim()}"` : "disarmed"}`,
+  });
+  return { key, engaged };
+}
+
+// ---- playbooks --------------------------------------------------------------
+
+export type PlaybookView = SeededPlaybook & {
+  allowed_transitions: PlaybookLifecycleState[];
+  is_agent_proposed: boolean;
+};
+
+const PLAYBOOK_HUMAN_NEXT: Partial<Record<PlaybookLifecycleState, PlaybookLifecycleState[]>> = {
+  draft: ["test"],
+  test: ["draft", "peer_review"],
+  peer_review: ["draft", "approved"],
+  approved: ["draft", "enabled"],
+  enabled: ["disabled"],
+  disabled: ["enabled", "retired"],
+};
+
+function mergedPlaybooks(tenantId: string): SeededPlaybook[] {
+  const session = getSession();
+  const merged = PLAYBOOKS.filter((p) => p.tenant_id === tenantId).map((p) => {
+    const o = session.playbookOverrides.get(p.playbook_id);
+    if (!o) return p;
+    return {
+      ...p,
+      lifecycle_state: o.lifecycle_state ?? p.lifecycle_state,
+      enabled_by: o.enabled_by ?? p.enabled_by,
+      version: o.version ?? p.version,
+      history: o.history ?? p.history,
+    };
+  });
+  return [...merged, ...session.proposedPlaybooks.filter((p) => p.tenant_id === tenantId)];
+}
+
+function getMergedPlaybook(tenantId: string, id: string): SeededPlaybook | undefined {
+  return mergedPlaybooks(tenantId).find((p) => p.playbook_id === id);
+}
+
+function toPlaybookView(pb: SeededPlaybook, ctx: SessionContext): PlaybookView {
+  const perms = permissionsFor(ctx);
+  const allowed = (PLAYBOOK_HUMAN_NEXT[pb.lifecycle_state] ?? []).filter(
+    (to) => validatePlaybookTransition(pb, to, { principal_id: ctx.userId, principal_type: "human", permissions: perms }).ok,
+  );
+  return { ...pb, allowed_transitions: allowed, is_agent_proposed: pb.proposed_by === "response-planner-agent" };
+}
+
+export async function fetchPlaybooks(ctx: SessionContext): Promise<PlaybookView[]> {
+  await gate("playbooks", 160);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "soc.view");
+  return mergedPlaybooks(ctx.tenantId).map((p) => toPlaybookView(p, ctx));
+}
+
+export async function fetchPlaybookDetail(ctx: SessionContext, playbookId: string) {
+  await gate("playbook-detail");
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "soc.view");
+  const pb = getMergedPlaybook(ctx.tenantId, playbookId);
+  if (!pb) throw new AccessError("permission_denied", "No such playbook in this tenant.");
+  const runs = [...getSession().agentRuns, ...getStore().agentActivity.runs].filter(
+    (r) => r.tenant_id === ctx.tenantId && r.case_id === playbookId,
+  );
+  return { playbook: toPlaybookView(pb, ctx), agent_runs: runs };
+}
+
+export async function transitionPlaybook(ctx: SessionContext, playbookId: string, to: PlaybookLifecycleState, note?: string) {
+  await gate("transition-playbook", 150);
+  assertEntitlement(ctx, "has_soc");
+  const pb = getMergedPlaybook(ctx.tenantId, playbookId);
+  if (!pb) throw new AccessError("permission_denied", "No such playbook.");
+  const verdict = validatePlaybookTransition(pb, to, {
+    principal_id: ctx.userId,
+    principal_type: "human",
+    permissions: permissionsFor(ctx),
+  });
+  if (!verdict.ok) throw new AccessError("permission_denied", verdict.message);
+
+  const now = DEMO_NOW_ISO;
+  const history = [
+    ...(pb.history ?? []),
+    { from_state: pb.lifecycle_state, to_state: to, changed_by: ctx.userId, changed_at: now },
+  ];
+  upsertPlaybookOverride(playbookId, { lifecycle_state: to, history, ...(to === "enabled" ? { enabled_by: ctx.userId } : {}) });
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "playbook_state_changed",
+    target_type: "playbook",
+    target_id: playbookId,
+    detail: `${pb.name}: ${pb.lifecycle_state} -> ${to}${note ? ` (${note})` : ""}`,
+  });
+  return { lifecycle_state: to };
+}
+
+// ---- response planning -----------------------------------------------------
+
+function mergedPlanFor(caseId: string): ReturnType<typeof planResponse> | null {
+  return getSession().responsePlans.get(caseId) ?? getStore().responsePlans[caseId] ?? null;
+}
+
+export async function planCaseResponse(ctx: SessionContext, caseId: string) {
+  await gate("plan-response", 500);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const theCase = getMergedCase(ctx.tenantId, caseId);
+  if (!theCase) throw new AccessError("permission_denied", "No such case.");
+  const linked = socAlertsFor(ctx.tenantId).filter((a) => theCase.linked_alert_ids.includes(a.envelope_id));
+  const enabled = mergedPlaybooks(ctx.tenantId).filter((p) => p.lifecycle_state === "enabled");
+  const plan = planResponse(theCase, linked, enabled, approvalPolicyFor(ctx.tenantId));
+  setResponsePlan(caseId, plan);
+
+  const now = DEMO_NOW_ISO;
+  const runId = `run-plan-${caseId}-${(hashString(now + getSession().agentRuns.length) >>> 0).toString(36)}`;
+  const message: AgentMessage = {
+    message_id: `${runId}-m1`,
+    agent_run_id: runId,
+    agent_name: "response-planner-agent",
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    prompt_version: "response-planner-agent-prompt-v1.0",
+    tool_version: "playbook-read-tool-v1.0",
+    rule_or_playbook_version: plan.playbook_id ?? undefined,
+    input_ref: caseId,
+    tool_calls: [
+      { tool_name: "case-read", called_at: now, scope_or_bound: "the assigned case" },
+      { tool_name: "playbook-read", called_at: now, scope_or_bound: "the approved playbook library" },
+      { tool_name: "action-request-draft", called_at: now, scope_or_bound: "drafts only - never submit-for-execution" },
+    ],
+    claim: plan.summary,
+    confidence: plan.source === "playbook" ? 0.62 : 0.3,
+    evidence: [
+      ...plan.matched_techniques.map((t) => ({ evidence_ref: `technique:${t}`, supports: true, freshness: now })),
+      ...plan.escalations.map((e) => ({ evidence_ref: e, supports: false, freshness: now })),
+    ],
+    escalated: plan.escalations.length > 0,
+    escalation_reason: plan.escalations.length > 0 ? "action_class_too_high" : undefined,
+    policy_outcome:
+      plan.escalations.length > 0
+        ? `${plan.escalations.length} step(s) at A3+ routed to the approval queue - the Response Planner cannot submit or execute an action`
+        : "plan drafted; no steps require approval",
+  };
+  addAgentRun(
+    {
+      agent_run_id: runId,
+      tenant_id: ctx.tenantId,
+      case_id: caseId,
+      subject_type: "case",
+      started_at: now,
+      completed_at: now,
+      message_ids: [message.message_id],
+      total_tool_calls: 3,
+      elapsed_seconds: 12,
+      human_touchpoints: [{ principal_id: ctx.userId, action: "reviewed", at: now, note: "Requested a response plan" }],
+      outcome: plan.escalations.length > 0 ? "escalated_pending_human" : "completed",
+      analyst_feedback: null,
+    },
+    [message],
+  );
+  return { plan, run_id: runId };
+}
+
+// ---- action requests + approval queue -------------------------------------
+
+/** compute expiry on read - an approved-but-unexecuted request past its window shows as expired */
+function withExpiry(r: ActionRequest): ActionRequest {
+  if (r.status === "approved" && r.expires_at && Date.parse(r.expires_at) <= Date.parse(DEMO_NOW_ISO)) {
+    return { ...r, status: "expired" };
+  }
+  return r;
+}
+
+function mergedActionRequests(tenantId: string): ActionRequest[] {
+  const session = getSession();
+  const all = [
+    ...getStore().actionRequests.filter((r) => r.tenant_id === tenantId),
+    ...session.actionRequests.filter((r) => r.tenant_id === tenantId),
+  ];
+  return all.map((r) => {
+    const o = session.actionRequestOverrides.get(r.action_request_id);
+    return withExpiry(o ? ({ ...r, ...o } as ActionRequest) : r);
+  });
+}
+
+function getMergedActionRequest(tenantId: string, id: string): ActionRequest | undefined {
+  return mergedActionRequests(tenantId).find((r) => r.action_request_id === id);
+}
+
+export interface RequestActionInput {
+  case_id: string;
+  playbook_id?: string;
+  playbook_step_id?: string;
+  action_class: "A0" | "A1" | "A2" | "A3" | "A4";
+  action_type: string;
+  summary?: string;
+  target?: string;
+}
+
+export async function requestAction(ctx: SessionContext, input: RequestActionInput): Promise<{ action_request_id: string; status: ActionRequestStatus }> {
+  await gate("request-action", 160);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "action.request");
+  const theCase = getMergedCase(ctx.tenantId, input.case_id);
+  if (!theCase) throw new AccessError("permission_denied", "No such case.");
+
+  const now = DEMO_NOW_ISO;
+  const id = `areq-u-${(hashString(`${input.case_id}:${input.action_type}:${now}:${getSession().actionRequests.length}`) >>> 0).toString(36)}`;
+  const requirement = approvalRequirement(
+    { action_class: input.action_class, action_type: input.action_type, status: "draft" } as ActionRequest,
+    approvalPolicyFor(ctx.tenantId),
+  );
+
+  const autoApproved = !requirement.needs_human_approval;
+  const draft: ActionRequest = {
+    action_request_id: id,
+    tenant_id: ctx.tenantId,
+    case_id: input.case_id,
+    playbook_id: input.playbook_id,
+    playbook_step_id: input.playbook_step_id ?? null,
+    action_class: input.action_class,
+    action_type: input.action_type,
+    summary: input.summary,
+    target: input.target,
+    requested_by: { principal_id: ctx.userId, principal_type: "human" },
+    requested_at: now,
+    status: autoApproved ? "approved" : "pending_approval",
+    policy_basis: autoApproved ? requirement.policy_basis : null,
+    dry_run: true,
+    reversible: isReversible(input.action_type),
+    ...(autoApproved ? { expires_at: minus(now, { hours: -4 }) } : {}),
+  };
+  actionRequestSchema.parse(draft);
+  addActionRequest(draft);
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "action_requested",
+    target_type: "action_request",
+    target_id: id,
+    detail: `${input.action_class} ${input.action_type}${input.target ? ` on ${input.target}` : ""} - ${draft.status}${autoApproved ? ` (${requirement.rationale})` : ""}`,
+  });
+  return { action_request_id: id, status: draft.status };
+}
+
+export async function fetchApprovalQueue(ctx: SessionContext) {
+  await gate("approval-queue", 200);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "soc.view");
+  const requests = mergedActionRequests(ctx.tenantId).filter((r) => r.status === "pending_approval");
+  const rows = requests.map((r) => {
+    const requirement = approvalRequirement(r, approvalPolicyFor(ctx.tenantId));
+    const pbAuthor = r.playbook_id ? getMergedPlaybook(ctx.tenantId, r.playbook_id)?.proposed_by : undefined;
+    const myCheck = canApprove(r, { principal_id: ctx.userId, permissions: permissionsFor(ctx) }, { underlyingPlaybookAuthor: pbAuthor });
+    return { request: r, requirement, can_i_approve: myCheck.ok, block_reason: myCheck.ok ? null : myCheck.message };
+  });
+  return { rows, can_approve: can(ctx, "action.approve") };
+}
+
+export async function approveAction(ctx: SessionContext, id: string) {
+  await gate("approve-action", 160);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "action.approve");
+  const r = getMergedActionRequest(ctx.tenantId, id);
+  if (!r) throw new AccessError("permission_denied", "No such action request.");
+  const pbAuthor = r.playbook_id ? getMergedPlaybook(ctx.tenantId, r.playbook_id)?.proposed_by : undefined;
+  const check = canApprove(r, { principal_id: ctx.userId, permissions: permissionsFor(ctx) }, { underlyingPlaybookAuthor: pbAuthor });
+  if (!check.ok) throw new AccessError("permission_denied", check.message);
+
+  const now = DEMO_NOW_ISO;
+  const patch: Partial<ActionRequest> = {
+    status: "approved",
+    approved_by: { principal_id: ctx.userId, principal_type: "human" },
+    approved_at: now,
+    expires_at: minus(now, { hours: -4 }),
+  };
+  actionRequestSchema.parse({ ...r, ...patch });
+  upsertActionRequestOverride(id, patch);
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "approval_granted",
+    target_type: "action_request",
+    target_id: id,
+    detail: `${r.action_class} ${r.action_type} approved (expires in 4h if not executed)`,
+  });
+  return { status: "approved" as const };
+}
+
+export async function denyAction(ctx: SessionContext, id: string, reason: string) {
+  await gate("deny-action", 140);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "action.approve");
+  const r = getMergedActionRequest(ctx.tenantId, id);
+  if (!r) throw new AccessError("permission_denied", "No such action request.");
+  if (r.requested_by.principal_id === ctx.userId) {
+    throw new AccessError("permission_denied", "You cannot decide on an action you requested.");
+  }
+  if (!reason.trim()) throw new AccessError("permission_denied", "A denial needs a reason.");
+  const now = DEMO_NOW_ISO;
+  upsertActionRequestOverride(id, { status: "denied", denied_reason: reason.trim() });
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "approval_denied",
+    target_type: "action_request",
+    target_id: id,
+    detail: `${r.action_class} ${r.action_type} denied - "${reason.trim()}"`,
+  });
+  return { status: "denied" as const };
+}
+
+// ---- deterministic executor ----------------------------------------------
+
+export async function executeActionRequest(ctx: SessionContext, id: string) {
+  await gate("execute-action", 300);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const r = getMergedActionRequest(ctx.tenantId, id);
+  if (!r) throw new AccessError("permission_denied", "No such action request.");
+  const theCase = getMergedCase(ctx.tenantId, r.case_id);
+  const now = DEMO_NOW_ISO;
+
+  const outcome = runExecutor(r, {
+    killSwitch: killSwitchGateFor(ctx.tenantId),
+    caseOpen: !!theCase && theCase.status !== "closed",
+    executedBy: ctx.userId,
+    nowIso: now,
+  });
+
+  if (!outcome.ok) {
+    appendAudit({
+      tenant_id: ctx.tenantId,
+      occurred_at: now,
+      actor: { principal_id: "response-executor", principal_type: "system" },
+      action: outcome.code === "expired" ? "action_expired" : "action_executed",
+      target_type: "action_request",
+      target_id: id,
+      detail: `Execution refused - ${outcome.message}`,
+    });
+    if (outcome.code === "expired") upsertActionRequestOverride(id, { status: "expired" });
+    throw new AccessError("permission_denied", outcome.message);
+  }
+
+  actionRequestSchema.parse({ ...r, ...outcome.patch });
+  upsertActionRequestOverride(id, outcome.patch);
+  if (!outcome.idempotent_noop) {
+    appendAudit({
+      tenant_id: ctx.tenantId,
+      occurred_at: now,
+      actor: { principal_id: "response-executor", principal_type: "system" },
+      action: "action_executed",
+      target_type: "action_request",
+      target_id: id,
+      detail: outcome.patch.execution?.result_note ?? "executed (dry-run)",
+    });
+    appendAudit({
+      tenant_id: ctx.tenantId,
+      occurred_at: now,
+      actor: { principal_id: "response-executor", principal_type: "system" },
+      action: "action_verified",
+      target_type: "action_request",
+      target_id: id,
+      detail: outcome.patch.verification?.notes ?? "verified (dry-run)",
+    });
+  }
+  return { status: outcome.patch.status, idempotent_noop: outcome.idempotent_noop };
+}
+
+export async function rollbackActionRequest(ctx: SessionContext, id: string) {
+  await gate("rollback-action", 200);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "case.work");
+  const r = getMergedActionRequest(ctx.tenantId, id);
+  if (!r) throw new AccessError("permission_denied", "No such action request.");
+  const res = runRollback(r, { rolledBackBy: ctx.userId, nowIso: DEMO_NOW_ISO });
+  if (!res.ok) throw new AccessError("permission_denied", res.message);
+  actionRequestSchema.parse({ ...r, ...res.patch });
+  upsertActionRequestOverride(id, res.patch);
+  appendAudit({
+    tenant_id: ctx.tenantId,
+    occurred_at: DEMO_NOW_ISO,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "action_rolled_back",
+    target_type: "action_request",
+    target_id: id,
+    detail: `${r.action_class} ${r.action_type} rolled back (dry-run)`,
+  });
+  return { status: "rolled_back" as const };
+}
+
+export async function fetchActionLog(ctx: SessionContext) {
+  await gate("action-log", 200);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "soc.view");
+  const done = mergedActionRequests(ctx.tenantId).filter((r) =>
+    ["approved", "denied", "expired", "executed", "verified", "rolled_back"].includes(r.status),
+  );
+  const caseById = new Map(mergedCases(ctx.tenantId).map((c) => [c.case_id, c] as const));
+  return done
+    .map((r) => ({
+      request: r,
+      case_title: caseById.get(r.case_id)?.title ?? r.case_id,
+      can_rollback:
+        can(ctx, "case.work") &&
+        (r.status === "executed" || r.status === "verified") &&
+        (r.rollback?.reversible ?? r.reversible ?? false),
+    }))
+    .sort((a, b) => Date.parse(b.request.requested_at ?? "") - Date.parse(a.request.requested_at ?? ""));
+}
+
+// ---- Supervisor + QA & Governance (read-side) ----------------------------
+
+export async function fetchCaseOrchestration(ctx: SessionContext, caseId: string) {
+  await gate("orchestration", 120);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "soc.view");
+  const runs = [...getSession().agentRuns, ...getStore().agentActivity.runs].filter(
+    (r) => r.tenant_id === ctx.tenantId && r.case_id === caseId,
+  );
+  const reqs = mergedActionRequests(ctx.tenantId).filter((r) => r.case_id === caseId);
+  const supervisor = summarizeCaseOrchestration(caseId, runs, reqs);
+
+  const store = getStore();
+  const qa = runs.map((run) => {
+    const msgs = [...getSession().agentMessages, ...store.agentActivity.messages]
+      .filter((m) => m.agent_run_id === run.agent_run_id)
+      .sort((a, b) => Date.parse(a.occurred_at) - Date.parse(b.occurred_at));
+    return reviewAgentRun(run, msgs);
+  });
+  return { supervisor, qa, plan: mergedPlanFor(caseId) };
 }

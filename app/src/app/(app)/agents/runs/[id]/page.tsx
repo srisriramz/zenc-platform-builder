@@ -26,7 +26,7 @@ export default function AgentRunPage() {
   if (run.isLoading) return <LoadingState label="Loading agent run…" />;
   if (run.isError || !run.data) return <QueryErrorState error={run.error} onRetry={() => run.refetch()} />;
 
-  const { run: r, messages, rule } = run.data;
+  const { run: r, messages, rule, qa } = run.data;
   const canReview = caps.data?.permissions.includes("rule.review") || caps.data?.permissions.includes("case.work");
 
   return (
@@ -78,6 +78,33 @@ export default function AgentRunPage() {
           )}
         </CardContent>
       </Card>
+
+      {qa && (
+        <Card className={`mt-4 ${qa.verdict === "flag" ? "border-[var(--warning)]/50" : ""}`}>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-2 text-sm">
+              <span>QA &amp; Governance review</span>
+              <Badge variant={qa.verdict === "pass" ? "success" : "warning"}>{qa.verdict}</Badge>
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              An automated schema / policy / evidence / tool-allowlist check run before this reaches a human queue. It
+              never approves anything.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-xs">
+              {qa.checks.map((ch) => (
+                <li key={ch.name} className="flex items-start gap-1.5">
+                  <span className={ch.ok ? "text-[var(--success)]" : "text-[var(--warning)]"}>{ch.ok ? "✓" : "⚠"}</span>
+                  <span>
+                    <span className="font-medium text-foreground">{ch.name}</span> — {ch.detail}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="mt-6 space-y-4">
         {messages.map((m, i) => {

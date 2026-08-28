@@ -6,8 +6,8 @@ import type { AgentName } from "@/schemas";
  * (agent-message). Adding a 13th means adding a row here first, not loosening
  * an existing one.
  *
- * Only the Detection Engineer Agent is wired in M3. The rest are roster
- * entries until M4 (the SOAR case/response layer they operate on).
+ * As of M4c, ten of the twelve are wired (`status: "live"`). The Reporting
+ * Agent lands in M5; the Assessment Assistant is Phase 2 (Assessment is off).
  */
 export type Autonomy = "L0" | "L1" | "L2" | "L3" | "L4";
 
@@ -25,7 +25,7 @@ export interface AgentDef {
   tools: AgentTool[];
   never_does: string[];
   /** which milestone wires this agent */
-  status: "live" | "m4";
+  status: "live" | "m5" | "phase2";
   prompt_version: string;
 }
 
@@ -37,7 +37,7 @@ export const AGENTS: AgentDef[] = [
     default_autonomy: "L1",
     tools: [{ name: "envelope-validate", access: "read", bound: "one alert payload" }],
     never_does: ["write to the case store directly"],
-    status: "m4",
+    status: "live",
     prompt_version: "intake-agent-prompt-v1.0",
   },
   {
@@ -50,7 +50,7 @@ export const AGENTS: AgentDef[] = [
       { name: "case-history-read", access: "read", bound: "last 30 days, same tenant" },
     ],
     never_does: ["open or suppress a case itself"],
-    status: "m4",
+    status: "live",
     prompt_version: "triage-agent-prompt-v1.0",
   },
   {
@@ -64,7 +64,7 @@ export const AGENTS: AgentDef[] = [
       { name: "ti-lookup", access: "read", bound: "one indicator per call, cached" },
     ],
     never_does: ["modify case status"],
-    status: "m4",
+    status: "live",
     prompt_version: "enrichment-agent-prompt-v1.0",
   },
   {
@@ -78,7 +78,7 @@ export const AGENTS: AgentDef[] = [
       { name: "log-search", access: "read", bound: "≤ 5000 events, ≤ 24h per call, safe parser only" },
     ],
     never_does: ["execute any external action"],
-    status: "m4",
+    status: "live",
     prompt_version: "investigation-agent-prompt-v1.0",
   },
   {
@@ -88,7 +88,7 @@ export const AGENTS: AgentDef[] = [
     default_autonomy: "L1",
     tools: [{ name: "log-search", access: "read", bound: "≤ 5000 events, ≤ 7d, safe parser only" }],
     never_does: ["auto-create a case without analyst confirmation"],
-    status: "m4",
+    status: "live",
     prompt_version: "hunt-agent-prompt-v1.0",
   },
   {
@@ -102,7 +102,7 @@ export const AGENTS: AgentDef[] = [
       { name: "action-request-draft", access: "write", bound: "drafts only — never submit-for-execution" },
     ],
     never_does: ["enable a playbook", "execute an action"],
-    status: "m4",
+    status: "live",
     prompt_version: "response-planner-agent-prompt-v1.0",
   },
   {
@@ -130,7 +130,7 @@ export const AGENTS: AgentDef[] = [
     default_autonomy: "L2",
     tools: [{ name: "closed-case-read", access: "read", bound: "one closed case" }],
     never_does: ["write to Assessment directly"],
-    status: "m4",
+    status: "phase2",
     prompt_version: "assessment-assistant-agent-prompt-v1.0",
   },
   {
@@ -143,7 +143,7 @@ export const AGENTS: AgentDef[] = [
       { name: "kpi-aggregate-read", access: "read", bound: "tenant-scoped aggregates" },
     ],
     never_does: ["publish a report without human sign-off on external-facing copy"],
-    status: "m4",
+    status: "m5",
     prompt_version: "reporting-agent-prompt-v1.0",
   },
   {
@@ -156,7 +156,7 @@ export const AGENTS: AgentDef[] = [
       { name: "approved-knowledge-read", access: "read", bound: "approved lessons only" },
     ],
     never_does: ["approve any action", "guarantee an outcome"],
-    status: "m4",
+    status: "live",
     prompt_version: "digital-advisor-agent-prompt-v1.0",
   },
   {
@@ -166,7 +166,7 @@ export const AGENTS: AgentDef[] = [
     default_autonomy: "L1",
     tools: [{ name: "agent-run-read", access: "read", bound: "agent-run records only" }],
     never_does: ["approve on another agent's behalf"],
-    status: "m4",
+    status: "live",
     prompt_version: "qa-governance-agent-prompt-v1.0",
   },
   {
@@ -185,7 +185,7 @@ export const AGENTS: AgentDef[] = [
       "expand a tenant's scope or autonomy level",
       "bypass human approval for A3/A4",
     ],
-    status: "m4",
+    status: "live",
     prompt_version: "supervisor-prompt-v1.0",
   },
 ];

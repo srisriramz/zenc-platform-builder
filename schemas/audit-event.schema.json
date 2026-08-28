@@ -27,7 +27,8 @@
         "role_changed", "entitlement_changed", "playbook_state_changed",
         "rule_state_changed", "kill_switch_toggled",
         "case_created", "case_status_changed", "alert_suppressed",
-        "task_created", "task_updated"
+        "task_created", "task_updated",
+        "action_requested", "action_verified", "action_expired"
       ]
     },
     "target_type": {

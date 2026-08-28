@@ -25,9 +25,10 @@ import { CaseTimeline } from "@/components/soc/case-timeline";
 import { CaseEvidence } from "@/components/soc/case-evidence";
 import { CaseTasks, TaskSlaBadge } from "@/components/soc/case-tasks";
 import { EnrichmentPanel, AdvisorPanel } from "@/components/soc/case-agent-panels";
+import { CaseResponse } from "@/components/soc/case-response";
 
 const CLOSURE_OPTIONS: ClosureClassification[] = ["true_positive", "false_positive", "benign_true_positive", "duplicate", "suppressed"];
-const TABS = ["Overview", "Timeline", "Evidence", "Tasks", "Context", "Agents"] as const;
+const TABS = ["Overview", "Timeline", "Evidence", "Tasks", "Context", "Response", "Agents"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function CaseDetailPage() {
@@ -53,6 +54,7 @@ export default function CaseDetailPage() {
   const {
     case: c, allowed_transitions, can_close, linkedAlerts, techniqueBreakdown, triage, agentRuns,
     evidence, tasks, task_sla, enrichment, advisor, timeline, latency, caseWorkers, canReviewEvidence,
+    responsePlan, actionRequests, can_plan_response, can_request_action,
   } = q.data;
   const needsReason = classification === "suppressed";
   const triageRunId = agentRuns.find((r) => r.agent_run_id.startsWith("run-triage"))?.agent_run_id;
@@ -215,6 +217,17 @@ export default function CaseDetailPage() {
                 </CardContent>
               </Card>
             </div>
+          )}
+
+          {tab === "Response" && (
+            <CaseResponse
+              caseId={c.case_id}
+              plan={responsePlan}
+              actionRequests={actionRequests}
+              canPlan={can_plan_response}
+              canRequest={can_request_action}
+              canWork={canWork}
+            />
           )}
 
           {tab === "Agents" && (

@@ -2,16 +2,14 @@ import { z } from "zod";
 import { entitySchema, isoDateTime, severity } from "./common";
 
 /**
- * Mirrors schemas/alert-envelope.schema.json (schema_version 1.1).
+ * Mirrors schemas/alert-envelope.schema.json.
  * Consumed by ZenC SOAR at intake. ZenC SIEM is the reference producer, not a
  * special case — SOAR logic must never branch on `source.system`.
- * Wired end to end in milestone M2 / M4; defined now so producers and the
- * seed layer share one shape.
  *
- * CONTRACT FREEZE: schema_version "1.1" is frozen. M2 (SIEM producer) and M4
- * (SOAR consumer) build against exactly this shape. A change here is a
- * deliberate version bump with a migration window (see
- * references/inter-product-contracts.md) — not an ad-hoc edit.
+ * Versions: 1.1 is the original shape. 1.2 (M2) adds `correlated_at`,
+ * `confidence`, and `sector_tags` — all optional and additive, so a 1.1
+ * consumer keeps working. Per inter-product-contracts.md, consumers support
+ * the current and previous version.
  */
 export const attackTechniqueClaimSchema = z.object({
   tactic: z.string(),
@@ -26,7 +24,7 @@ export type AttackTechniqueClaim = z.infer<typeof attackTechniqueClaimSchema>;
 export const alertEnvelopeSchema = z
   .object({
     envelope_id: z.string(),
-    schema_version: z.literal("1.1"),
+    schema_version: z.enum(["1.1", "1.2"]),
     tenant_id: z.string(),
     source: z.object({
       system: z.string(),
@@ -35,8 +33,14 @@ export const alertEnvelopeSchema = z
     }),
     source_alert_id: z.string(),
     occurred_at: isoDateTime,
+    /** v1.2+ — occurred_at → correlated_at is the SIEM detection pipeline stage */
+    correlated_at: isoDateTime.optional(),
     received_at: isoDateTime,
     severity,
+    /** v1.2+ — 0..1; deterministic for a native rule */
+    confidence: z.number().min(0).max(1).optional(),
+    /** v1.2+ — sector/context tags inherited from the producing rule */
+    sector_tags: z.array(z.string()).optional(),
     title: z.string(),
     description: z.string().optional(),
     entities: z.array(entitySchema).optional(),

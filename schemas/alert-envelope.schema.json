@@ -10,7 +10,11 @@
   ],
   "properties": {
     "envelope_id": { "type": "string" },
-    "schema_version": { "type": "string", "const": "1.1" },
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.1", "1.2"],
+      "description": "1.2 adds correlated_at, confidence, and sector_tags (all optional, additive). Consumers must support the current and previous version."
+    },
     "tenant_id": { "type": "string" },
     "source": {
       "type": "object",
@@ -29,10 +33,26 @@
     },
     "source_alert_id": { "type": "string" },
     "occurred_at": { "type": "string", "format": "date-time" },
+    "correlated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the producing engine finished correlating (v1.2+). occurred_at -> correlated_at is the SIEM detection stage of the pipeline-latency breakdown."
+    },
     "received_at": { "type": "string", "format": "date-time" },
     "severity": {
       "type": "string",
       "enum": ["informational", "low", "medium", "high", "critical"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Producer's confidence in the detection (v1.2+). Deterministic for a native rule; source-provided for a third-party alert."
+    },
+    "sector_tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Sector/context tags inherited from the producing rule (v1.2+)."
     },
     "title": { "type": "string" },
     "description": {

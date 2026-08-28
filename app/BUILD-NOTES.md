@@ -10,8 +10,8 @@ follow `templates/claude-code-bootstrap.md`.
 |---|---|---|
 | **M0** | Scaffold + platform shell | ✅ done |
 | **M1** | SIEM foundation: telemetry, normalization, Log Explorer | ✅ done |
-| M2 | Correlation engine + ATT&CK-mapped rules → alert-envelope | not started |
-| M3 | Detection engineering workflow (agent proposes, human-only enable) | not started |
+| **M2** | Correlation engine + ATT&CK-mapped rules → alert-envelope | ✅ done |
+| M3 | Detection engineering *workflow* (agent proposes, live regression, human-only enable) | rule catalog + lifecycle done; authoring workflow pending |
 | M4 | ZenC SOC: intake → triage → response, 12 agents, approvals | not started |
 | M5 | ATT&CK × D3FEND coverage matrix + SOC reporting | not started |
 
@@ -105,6 +105,39 @@ component API, no dependency on the CLI.
 - **SIEM Dashboard** and **Telemetry & Connectors** screens with connector
   health, ingestion lag, 24h volume, schema-validation failures, and the
   quarantine queue.
+## M2 — what's in
+
+- **Correlation engine** (`lib/correlation/`) — deterministic, LLM-free. Rule
+  types: single-event, threshold (sliding window, group-by), sequence
+  (ordered, per-step `min_count`, entity-joined), entity-join. Matching goes
+  through a small typed `EventMatch` spec against *normalized* events only —
+  no eval / SQL / shell / user-RegExp; wildcards reuse the Log Explorer's
+  linear glob matcher.
+- **8 seeded rules** (`data/correlation-rules.ts`) across the lifecycle —
+  6 enabled (each with a human `enabled_by` + D3FEND mapping + seeded
+  regression results + history), 1 `peer_review` (proposed by the Detection
+  Engineer Agent, **cannot fire — a human must enable it**), 1 `disabled`.
+- **Deterministic attack scenarios** planted in the event generator
+  (`injectAttackScenarios`) so threshold/sequence rules have real bursts to
+  fire on — a password spray + success, an external port scan, an SSH
+  brute-then-accept. ~26 alerts over the 72h sample.
+- **Real `alert-envelope` v1.2 objects** — `schema_version` is now
+  `1.1 | 1.2`; 1.2 adds optional `correlated_at`, `confidence`, `sector_tags`
+  (additive, both JSON + Zod schemas bumped). Every `attack_techniques`
+  entry cites the specific contributing normalized-event IDs (SKILL.md #10).
+- **`/correlation`** — alert stream + detail with the clickable ATT&CK
+  technique breakdown (technique → contributing events → Log Explorer),
+  detection latency shown as the MTTD pipeline stage.
+- **`/detections`** — rule catalog + detail: structured logic rendered
+  readably, ATT&CK/D3FEND mappings, regression results, lifecycle rail +
+  history. The authoring workflow (agent proposal, live regression) is M3.
+- **Analytics → Detection Analytics** now shows detection activity (alerts
+  by severity / by rule) and **MTTD** (mean occurred→correlated latency).
+- 5 engine tests (rule-type semantics, envelope validity, contributing-event
+  tracing, determinism) + v1.2 schema tests.
+
+## M1 — what's in
+
 - **Entities at Risk** (`/entities`) — the seeded, *indicative* UEBA
   stand-in. Per-user/host risk score derived transparently from signal
   *ratios* in the sample (not ML, not baselining — that stays Phase 1.5);

@@ -14,6 +14,8 @@ import { runQuery, type EvalContext, type RunQueryError, type RunQueryResult } f
 import type { NormalizedEvent } from "@/schemas";
 import { TENANT_MAP } from "@/data/platform";
 import { dailyVolumeSeries } from "@/data/ingestion-profile";
+import type { SeededRule } from "@/data/correlation-rules";
+import type { AlertEnvelope, CorrelationRule } from "@/schemas";
 
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
 
@@ -194,6 +196,87 @@ export async function fetchEntityRiskDetail(ctx: SessionContext, entityType: str
 }
 
 // ---------------------------------------------------------------------------
+// SIEM — Correlation & alerts
+// ---------------------------------------------------------------------------
+
+export type RuleView = CorrelationRule & {
+  definition: Record<string, unknown>;
+  alert_title: string;
+  fired_count: number;
+};
+
+function toRuleView(rule: SeededRule, firedCount: number): RuleView {
+  const { alert_summary: _summary, alert_title, definition, ...rest } = rule;
+  void _summary;
+  return { ...rest, alert_title, definition: definition as unknown as Record<string, unknown>, fired_count: firedCount };
+}
+
+export async function fetchCorrelationRules(ctx: SessionContext): Promise<RuleView[]> {
+  await gate("correlation-rules");
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "rule.view");
+  const store = getStore();
+  return store.correlationRules
+    .filter((r) => r.tenant_id === ctx.tenantId)
+    .map((r) => toRuleView(r, store.ruleFireCounts[r.rule_id] ?? 0));
+}
+
+export async function fetchRuleDetail(ctx: SessionContext, ruleId: string) {
+  await gate("rule-detail");
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "rule.view");
+  const store = getStore();
+  const rule = store.correlationRules.find((r) => r.rule_id === ruleId && r.tenant_id === ctx.tenantId);
+  if (!rule) throw new AccessError("permission_denied", "No such rule in this tenant.");
+  return {
+    rule: toRuleView(rule, store.ruleFireCounts[rule.rule_id] ?? 0),
+    alerts: store.alerts.filter((a) => a.tenant_id === ctx.tenantId && (a.attack_techniques ?? []).some((t) => t.source_rule_id === ruleId)),
+  };
+}
+
+export interface AlertFilter {
+  severity?: string;
+  ruleId?: string;
+  techniqueId?: string;
+}
+
+export async function fetchAlerts(ctx: SessionContext, filter: AlertFilter = {}): Promise<AlertEnvelope[]> {
+  await gate("alerts", 220);
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "siem.view");
+  let alerts = getStore().alerts.filter((a) => a.tenant_id === ctx.tenantId);
+  if (filter.severity) alerts = alerts.filter((a) => a.severity === filter.severity);
+  if (filter.ruleId) alerts = alerts.filter((a) => (a.attack_techniques ?? []).some((t) => t.source_rule_id === filter.ruleId));
+  if (filter.techniqueId) alerts = alerts.filter((a) => (a.attack_techniques ?? []).some((t) => t.technique_id === filter.techniqueId));
+  return alerts;
+}
+
+export async function fetchAlertDetail(ctx: SessionContext, envelopeId: string) {
+  await gate("alert-detail");
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "siem.view");
+  const store = getStore();
+  const alert = store.alerts.find((a) => a.envelope_id === envelopeId && a.tenant_id === ctx.tenantId);
+  if (!alert) throw new AccessError("permission_denied", "No such alert in this tenant.");
+
+  // resolve the contributing normalized events for the technique breakdown
+  const allRefs = new Set<string>();
+  for (const t of alert.attack_techniques ?? []) for (const r of t.contributing_event_refs) allRefs.add(r);
+  const eventsById = new Map(
+    store.normalizedEvents.filter((e) => allRefs.has(e.event_id)).map((e) => [e.event_id, e] as const),
+  );
+  const rule = store.correlationRules.find((r) =>
+    (alert.attack_techniques ?? []).some((t) => t.source_rule_id === r.rule_id),
+  );
+
+  return {
+    alert,
+    rule: rule ? toRuleView(rule, store.ruleFireCounts[rule.rule_id] ?? 0) : null,
+    contributingEvents: [...eventsById.values()],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Analytics (cross-product reporting layer — a consumer, not a god-view)
 // ---------------------------------------------------------------------------
 
@@ -248,6 +331,27 @@ export async function fetchDetectionAnalytics(ctx: SessionContext) {
   const riskBands = { critical: 0, high: 0, elevated: 0, low: 0 };
   for (const r of store.entityRisk.filter((r) => r.tenant_id === ctx.tenantId)) riskBands[r.band]++;
 
+  // detection activity (M2 — real alerts)
+  const tenantAlerts = store.alerts.filter((a) => a.tenant_id === ctx.tenantId);
+  const alertsBySeverity = { critical: 0, high: 0, medium: 0, low: 0, informational: 0 };
+  for (const a of tenantAlerts) alertsBySeverity[a.severity]++;
+  const alertsByRule = new Map<string, { name: string; count: number }>();
+  for (const a of tenantAlerts) {
+    const ruleId = a.attack_techniques?.[0]?.source_rule_id;
+    if (!ruleId) continue;
+    const name = store.correlationRules.find((r) => r.rule_id === ruleId)?.name ?? ruleId;
+    const cur = alertsByRule.get(ruleId) ?? { name, count: 0 };
+    cur.count++;
+    alertsByRule.set(ruleId, cur);
+  }
+  const tenantRules = store.correlationRules.filter((r) => r.tenant_id === ctx.tenantId);
+  const detectionLatencies = tenantAlerts
+    .filter((a) => a.correlated_at)
+    .map((a) => (Date.parse(a.correlated_at!) - Date.parse(a.occurred_at)) / 1000);
+  const mttdSeconds = detectionLatencies.length
+    ? Math.round(detectionLatencies.reduce((s, n) => s + n, 0) / detectionLatencies.length)
+    : null;
+
   return {
     demoNowIso: store.demoNowIso,
     volumeTrend,
@@ -257,6 +361,15 @@ export async function fetchDetectionAnalytics(ctx: SessionContext) {
     eventTypeMix: [...eventTypeMix.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count).slice(0, 8),
     riskBands,
     sampleSize: sampleEvents.filter((e) => e.normalization_status === "normalized").length,
+    detection: {
+      totalAlerts: tenantAlerts.length,
+      alertsBySeverity,
+      alertsByRule: [...alertsByRule.entries()].map(([ruleId, v]) => ({ ruleId, ...v })).sort((a, b) => b.count - a.count),
+      enabledRules: tenantRules.filter((r) => r.lifecycle_state === "enabled").length,
+      totalRules: tenantRules.length,
+      rulesWithD3fend: tenantRules.filter((r) => r.lifecycle_state === "enabled" && r.d3fend_mapping?.length).length,
+      mttdSeconds,
+    },
   };
 }
 

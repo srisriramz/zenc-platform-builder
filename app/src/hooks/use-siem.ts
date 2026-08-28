@@ -2,12 +2,17 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
+  fetchAlertDetail,
+  fetchAlerts,
+  fetchCorrelationRules,
   fetchEntityRisk,
   fetchEntityRiskDetail,
   fetchEventLineage,
   fetchQuarantineQueue,
+  fetchRuleDetail,
   fetchTelemetrySources,
   searchLogs,
+  type AlertFilter,
   type LogSearchInput,
 } from "@/mock/api";
 import { useSession } from "@/store/session";
@@ -69,5 +74,42 @@ export function useEntityRiskDetail(entityType: string | null, value: string | n
     queryKey: ["entity-risk-detail", ctx?.tenantId, entityType, value],
     queryFn: () => fetchEntityRiskDetail(ctx!, entityType!, value!),
     enabled: !!ctx && !!entityType && !!value,
+  });
+}
+
+export function useCorrelationRules() {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["correlation-rules", ctx?.tenantId],
+    queryFn: () => fetchCorrelationRules(ctx!),
+    enabled: !!ctx,
+  });
+}
+
+export function useRuleDetail(ruleId: string | null) {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["rule-detail", ctx?.tenantId, ruleId],
+    queryFn: () => fetchRuleDetail(ctx!, ruleId!),
+    enabled: !!ctx && !!ruleId,
+  });
+}
+
+export function useAlerts(filter: AlertFilter = {}) {
+  const ctx = useSessionContext();
+  const sim = useSession((s) => s.sim);
+  return useQuery({
+    queryKey: ["alerts", ctx?.tenantId, sim, filter],
+    queryFn: () => fetchAlerts(ctx!, filter),
+    enabled: !!ctx,
+  });
+}
+
+export function useAlertDetail(envelopeId: string | null) {
+  const ctx = useSessionContext();
+  return useQuery({
+    queryKey: ["alert-detail", ctx?.tenantId, envelopeId],
+    queryFn: () => fetchAlertDetail(ctx!, envelopeId!),
+    enabled: !!ctx && !!envelopeId,
   });
 }

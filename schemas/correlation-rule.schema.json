@@ -40,6 +40,17 @@
       "type": "string",
       "enum": ["informational", "low", "medium", "high", "critical"]
     },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Deterministic confidence a fired alert inherits. Distinct from severity."
+    },
+    "sector_tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Sector/context tags a fired alert inherits."
+    },
     "attack_mapping": {
       "type": "array",
       "description": "Canonical technique mapping set at authoring time. Any alert this rule fires inherits this as source_rule_id-linked context, but the alert's own contributing_event_refs are always the real matched events.",

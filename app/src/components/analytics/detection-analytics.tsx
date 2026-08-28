@@ -5,8 +5,10 @@ import { ArrowUpRight, Check, CircleAlert, Minus, Rocket } from "lucide-react";
 import { useDetectionAnalytics } from "@/hooks/use-platform";
 import { drillHref } from "@/lib/use-nav";
 import { formatBytes, formatCount } from "@/lib/format";
+import { formatDuration } from "@/lib/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
+import { StatTile, StatGrid } from "@/components/stat-tile";
 import { BarList, type BarDatum } from "@/components/ui/bar-list";
 import { HealthBadge, FamilyLabel } from "@/components/domain-badges";
 import { QueryErrorState, TableSkeleton } from "@/components/states";
@@ -43,8 +45,65 @@ export function DetectionAnalytics() {
     display: String(e.count),
   }));
 
+  const sevBars: BarDatum[] = (["critical", "high", "medium", "low", "informational"] as const)
+    .filter((s) => a.detection.alertsBySeverity[s] > 0)
+    .map((s) => ({
+      key: s,
+      label: <span className="capitalize">{s}</span>,
+      value: a.detection.alertsBySeverity[s],
+      display: String(a.detection.alertsBySeverity[s]),
+      barClass: `bg-[var(--sev-${s})]`,
+    }));
+  const ruleBars: BarDatum[] = a.detection.alertsByRule.slice(0, 6).map((r) => ({
+    key: r.ruleId,
+    label: <span className="text-xs">{r.name}</span>,
+    value: r.count,
+    display: String(r.count),
+  }));
+
   return (
     <div className="space-y-6">
+      {/* detection activity (M2) */}
+      <StatGrid>
+        <StatTile label="Alerts (72h sample)" value={a.detection.totalAlerts} tone="primary" href="/correlation" />
+        <StatTile
+          label="Enabled rules"
+          value={`${a.detection.enabledRules}/${a.detection.totalRules}`}
+          sub={`${a.detection.rulesWithD3fend} with D3FEND`}
+          href="/detections"
+        />
+        <StatTile
+          label="High + critical alerts"
+          value={a.detection.alertsBySeverity.critical + a.detection.alertsBySeverity.high}
+          tone={a.detection.alertsBySeverity.critical ? "danger" : "warning"}
+          href={drillHref("/correlation", { severity: "high" })}
+        />
+        <StatTile
+          label="MTTD (detection latency)"
+          value={a.detection.mttdSeconds != null ? formatDuration(a.detection.mttdSeconds) : "—"}
+          sub="occurred → correlated, mean"
+        />
+      </StatGrid>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Alerts by severity</CardTitle>
+            <p className="text-sm text-muted-foreground">Produced by enabled correlation rules over the sample.</p>
+          </CardHeader>
+          <CardContent>{sevBars.length ? <BarList data={sevBars} /> : <p className="text-sm text-muted-foreground">No alerts.</p>}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Alerts by rule</CardTitle>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/detections">Rules</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>{ruleBars.length ? <BarList data={ruleBars} /> : <p className="text-sm text-muted-foreground">No rules fired.</p>}</CardContent>
+        </Card>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -206,12 +265,11 @@ export function DetectionAnalytics() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>
-              Rule health, noise indicators, per-technique detection coverage %, and detection activity (alerts by rule /
-              severity / technique, MTTD as detection latency) arrive with the correlation engine and rule lifecycle.
+              Detection activity and rule health are live (above). Still to come: the agent-assisted authoring workflow
+              with live regression runs, and the per-technique ATT&amp;CK × D3FEND coverage percentages.
             </p>
             <div className="flex flex-wrap gap-2 pt-1">
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Rule health → M3</span>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Detection activity → M2</span>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Rule authoring workflow → M3</span>
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Coverage % → M5</span>
             </div>
           </CardContent>

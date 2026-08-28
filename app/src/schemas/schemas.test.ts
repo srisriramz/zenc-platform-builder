@@ -50,6 +50,21 @@ describe("schema refinements enforce the non-negotiable invariants", () => {
     expect(alertEnvelopeSchema.safeParse({ ...alert, validation_status: "quarantined" }).success).toBe(false);
   });
 
+  it("accepts a v1.2 envelope with correlated_at / confidence / sector_tags", () => {
+    const v12 = {
+      ...alert,
+      schema_version: "1.2",
+      correlated_at: "2026-08-20T03:14:30Z",
+      confidence: 0.7,
+      sector_tags: ["BFSI"],
+    };
+    expect(alertEnvelopeSchema.safeParse(v12).success).toBe(true);
+  });
+
+  it("rejects an out-of-range confidence", () => {
+    expect(alertEnvelopeSchema.safeParse({ ...alert, schema_version: "1.2", confidence: 1.5 }).success).toBe(false);
+  });
+
   it("an enabled rule with no D3FEND mapping and no d3fend_unmapped is rejected", () => {
     const { d3fend_mapping, ...rest } = rule;
     void d3fend_mapping;

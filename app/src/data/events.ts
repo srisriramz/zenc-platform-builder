@@ -1,4 +1,4 @@
-import type { Entity, NormalizedEvent, RawEvent } from "@/schemas";
+import type { Entity, NormalizedEvent, RawEvent, TelemetrySourceFamily } from "@/schemas";
 import { DEMO_NOW_ISO, minus } from "@/lib/time";
 import { makeRng } from "@/lib/prng";
 import { TELEMETRY_SOURCE_CONFIGS, type TelemetrySourceConfig } from "./telemetry-sources";
@@ -493,6 +493,110 @@ export function generateEvents(): GeneratedEvents {
     }
   }
 
+  injectAttackScenarios(raw, normalized);
+
   normalized.sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at));
   return { raw, normalized };
+}
+
+/**
+ * A few deterministic, bursty attack scenarios planted into the stream so the
+ * threshold/sequence correlation rules have something real to fire on. Uniform
+ * random background traffic never produces a burst; real intrusions do.
+ * All synthetic — RFC 5737 addresses, demo accounts.
+ */
+function injectAttackScenarios(raw: RawEvent[], normalized: NormalizedEvent[]): void {
+  const add = (
+    sourceId: string,
+    family: TelemetrySourceFamily,
+    tag: string,
+    n: number,
+    startMinutesAgo: number,
+    spanMinutes: number,
+    build: (i: number) => { event_type: string; entities: Entity[]; attack_technique_refs?: string[]; rawBody: Record<string, unknown> },
+  ) => {
+    const info = PARSER_INFO[family];
+    for (let i = 0; i < n; i++) {
+      const minutesAgo = startMinutesAgo - (spanMinutes * i) / Math.max(1, n - 1);
+      const occurred_at = minus(DEMO_NOW_ISO, { seconds: Math.round(minutesAgo * 60) });
+      const ingested_at = minus(occurred_at, { seconds: -(info === PARSER_INFO.firewall ? 12 : 8) });
+      const { event_type, entities, attack_technique_refs, rawBody } = build(i);
+      const rawRef = `seed-fixtures/${sourceId}/scenario-${tag}-${String(i + 1).padStart(3, "0")}.json`;
+      raw.push({
+        raw_payload_ref: rawRef,
+        tenant_id: "tenant-northwind-bank",
+        telemetry_source_id: sourceId,
+        received_at: ingested_at,
+        format: info.format,
+        raw: { _source_family: family, _scenario: tag, ...rawBody },
+      });
+      normalized.push({
+        event_id: `nevt-scn-${tag}-${String(i + 1).padStart(3, "0")}`,
+        tenant_id: "tenant-northwind-bank",
+        telemetry_source_id: sourceId,
+        occurred_at,
+        ingested_at,
+        event_type,
+        entities,
+        attack_technique_refs,
+        parser_version: info.parser,
+        schema_version: info.schema,
+        raw_payload_ref: rawRef,
+        normalization_status: "normalized",
+      });
+    }
+  };
+
+  // Scenario 1 — password spraying then a success (feeds the threshold rule AND the sequence rule)
+  const sprayIp = "203.0.113.77";
+  add("ts-nwb-identity-01", "identity", "spray", 20, 26 * 60, 9, () => ({
+    event_type: "idp_signin_failure",
+    entities: [
+      { entity_type: "user", value: "contractor-twong" },
+      { entity_type: "ip", value: sprayIp },
+    ],
+    attack_technique_refs: ["T1110", "T1110.003"],
+    rawBody: { activity: "UserLoginFailed", errorCode: 50126 },
+  }));
+  add("ts-nwb-identity-01", "identity", "spray-success", 1, 26 * 60 - 11, 0, () => ({
+    event_type: "idp_signin_success",
+    entities: [
+      { entity_type: "user", value: "contractor-twong" },
+      { entity_type: "ip", value: sprayIp },
+    ],
+    rawBody: { activity: "UserLoggedIn", conditionalAccess: "satisfied" },
+  }));
+
+  // Scenario 2 — external port/service scan
+  const scanIp = "198.51.100.113";
+  add("ts-nwb-firewall-01", "firewall", "scan", 32, 40 * 60, 4, (i) => ({
+    event_type: "firewall_deny",
+    entities: [
+      { entity_type: "ip", value: scanIp },
+      { entity_type: "ip", value: `10.23.${20 + (i % 6)}.${10 + i}` },
+    ],
+    attack_technique_refs: ["T1046"],
+    rawBody: { act: "deny", proto: "tcp", dpt: [3389, 445, 22, 1433, 23, 3306][i % 6], reason: "policy" },
+  }));
+
+  // Scenario 3 — failed SSH burst then accepted, same host (sequence rule, linux)
+  add("ts-nwb-linux-01", "linux_syslog", "ssh-brute", 14, 52 * 60, 6, () => ({
+    event_type: "linux_sshd_failed",
+    entities: [
+      { entity_type: "host", value: "nwb-srv-04" },
+      { entity_type: "user", value: "svc-deploy" },
+      { entity_type: "ip", value: "192.0.2.51" },
+    ],
+    attack_technique_refs: ["T1110"],
+    rawBody: { app: "sshd", msg: "Failed password for svc-deploy from 192.0.2.51" },
+  }));
+  add("ts-nwb-linux-01", "linux_syslog", "ssh-accept", 1, 52 * 60 - 7, 0, () => ({
+    event_type: "linux_sshd_accepted",
+    entities: [
+      { entity_type: "host", value: "nwb-srv-04" },
+      { entity_type: "user", value: "svc-deploy" },
+      { entity_type: "ip", value: "192.0.2.51" },
+    ],
+    rawBody: { app: "sshd", msg: "Accepted password for svc-deploy from 192.0.2.51" },
+  }));
 }

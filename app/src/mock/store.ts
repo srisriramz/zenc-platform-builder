@@ -16,6 +16,8 @@ import { TELEMETRY_SOURCE_CONFIGS } from "@/data/telemetry-sources";
 import { FAMILY_INGESTION_PROFILE, nominalEps } from "@/data/ingestion-profile";
 import { generateEvents } from "@/data/events";
 import { deriveEntityRisk } from "@/data/entity-risk";
+import { CORRELATION_RULES } from "@/data/correlation-rules";
+import { runCorrelation } from "@/lib/correlation/engine";
 import { ATTACK_TECHNIQUES, ATTACK_TACTICS } from "@/data/frameworks/attack";
 import { D3FEND_TECHNIQUES } from "@/data/frameworks/d3fend";
 
@@ -118,6 +120,16 @@ function assemble() {
   const telemetrySources = buildTelemetrySources(normalized);
   const siemTenantIds = [...new Set(telemetrySources.map((s) => s.tenant_id))];
   const entityRisk = siemTenantIds.flatMap((tid) => deriveEntityRisk(normalized, tid));
+
+  const familyMap = new Map(telemetrySources.map((s) => [s.telemetry_source_id, s.family]));
+  const healthMap = new Map(telemetrySources.map((s) => [s.telemetry_source_id, s.health]));
+  const firings = runCorrelation(normalized, CORRELATION_RULES, {
+    familyOf: (id) => familyMap.get(id),
+    healthOf: (id) => healthMap.get(id),
+  });
+  const alerts = firings.flatMap((f) => f.alerts).sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at));
+  const ruleFireCounts = Object.fromEntries(firings.map((f) => [f.rule.rule_id, f.alerts.length]));
+
   return {
     demoNowIso: DEMO_NOW_ISO,
     partners: PARTNERS,
@@ -130,6 +142,9 @@ function assemble() {
     rawEvents: raw as RawEvent[],
     normalizedEvents: normalized,
     entityRisk,
+    correlationRules: CORRELATION_RULES,
+    alerts,
+    ruleFireCounts,
     audit: seedAudit(),
     frameworks: {
       attackTactics: ATTACK_TACTICS,

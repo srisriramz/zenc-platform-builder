@@ -43,8 +43,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/ingestion", label: "Traffic & Ingestion", section: "SIEM", product: "siem", icon: Waves, requires: "has_siem", permission: "siem.view" },
   { href: "/log-explorer", label: "Log Explorer", section: "SIEM", product: "siem", icon: Table2, requires: "has_siem", permission: "siem.query" },
   { href: "/entities", label: "Entities at Risk", section: "SIEM", product: "siem", icon: Fingerprint, requires: "has_siem", permission: "siem.view" },
-  { href: "/correlation", label: "Correlation", section: "SIEM", product: "siem", icon: Radar, requires: "has_siem", permission: "siem.view", milestone: "M2" },
-  { href: "/detections", label: "Detection Engineering", section: "SIEM", product: "siem", icon: ShieldHalf, requires: "has_siem", permission: "rule.view", milestone: "M3" },
+  { href: "/correlation", label: "Correlation", section: "SIEM", product: "siem", icon: Radar, requires: "has_siem", permission: "siem.view" },
+  { href: "/detections", label: "Detection Engineering", section: "SIEM", product: "siem", icon: ShieldHalf, requires: "has_siem", permission: "rule.view" },
   { href: "/coverage", label: "ATT&CK × D3FEND Coverage", section: "SIEM", product: "siem", icon: Boxes, requires: "has_siem", permission: "siem.view", milestone: "M5" },
 
   // ---- SOAR (Respond product; internal key stays "soc") ----

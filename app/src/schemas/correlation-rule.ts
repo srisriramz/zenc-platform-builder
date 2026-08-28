@@ -69,6 +69,10 @@ export const correlationRuleSchema = z
     rule_type: ruleType,
     definition: z.record(z.string(), z.unknown()).optional(),
     severity: severity.optional(),
+    /** deterministic confidence a fired alert inherits — distinct from severity */
+    confidence: z.number().min(0).max(1).optional(),
+    /** sector/context tags a fired alert inherits */
+    sector_tags: z.array(z.string()).optional(),
     attack_mapping: z.array(attackMappingEntry).min(1),
     d3fend_mapping: z.array(d3fendMappingEntry).optional(),
     d3fend_unmapped: z.boolean().optional(),

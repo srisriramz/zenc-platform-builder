@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Building2, CornerDownLeft, FlaskConical, Search } from "lucide-react";
+import { ArrowRight, Building2, CornerDownLeft, FlaskConical, PlayCircle, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { BootstrapData } from "@/mock/api";
 import { ROLES } from "@/data/platform";
@@ -12,7 +12,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input, Kbd } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 
-type Group = "Navigate" | "Tenants" | "Simulation";
+type Group = "Navigate" | "Demo" | "Tenants" | "Simulation";
 
 interface Command {
   id: string;
@@ -62,6 +62,20 @@ export function CommandPalette({
       },
     }));
 
+    const demo: Command[] = [
+      {
+        id: "demo:open",
+        label: "Guided demo",
+        hint: "Scripted walkthroughs",
+        group: "Demo" as const,
+        icon: PlayCircle,
+        run: () => {
+          router.push("/demo");
+          onClose();
+        },
+      },
+    ];
+
     const tenants: Command[] = bootstrap.tenants.map((t) => ({
       id: `tenant:${t.tenant_id}`,
       label: t.name,
@@ -95,7 +109,7 @@ export function CommandPalette({
       },
     }));
 
-    return [...nav, ...tenants, ...sims];
+    return [...nav, ...demo, ...tenants, ...sims];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootstrap.tenants, tenant, router]);
 
@@ -121,7 +135,7 @@ export function CommandPalette({
     setActive(0);
   }
 
-  const groups: Group[] = ["Navigate", "Tenants", "Simulation"];
+  const groups: Group[] = ["Navigate", "Demo", "Tenants", "Simulation"];
   let flatIndex = -1;
 
   return (

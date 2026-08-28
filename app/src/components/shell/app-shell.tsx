@@ -8,6 +8,7 @@ import { LoadingState } from "@/components/states";
 import { TopBar } from "./top-bar";
 import { SideNav } from "./side-nav";
 import { CommandPalette } from "./command-palette";
+import { DemoController } from "@/components/demo/demo-controller";
 import { Sheet } from "@/components/ui/sheet";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -17,6 +18,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const userId = useSession((s) => s.userId);
   const tenantId = useSession((s) => s.tenantId);
   const setTenant = useSession((s) => s.setTenant);
+  const demoRunning = useSession((s) => !!s.guidedDemo);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
 
@@ -78,7 +80,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <TopBar bootstrap={bootstrap.data} onOpenPalette={() => setPaletteOpen(true)} onOpenNav={() => setMobileNavOpen(true)} />
       <div className="mx-auto flex w-full max-w-[1640px] flex-1">
         <SideNav bootstrap={bootstrap.data} />
-        <main id="main-content" className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main
+          id="main-content"
+          className={`min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 ${demoRunning ? "pb-44" : ""}`}
+        >
           <div key={pathname} className="anim-rise">
             {children}
           </div>
@@ -95,6 +100,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </Sheet>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} bootstrap={bootstrap.data} />
+      <DemoController />
     </div>
   );
 }

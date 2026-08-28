@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   LineChart,
   Network,
+  PlayCircle,
   Radar,
   ScrollText,
   ShieldHalf,
@@ -68,6 +69,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/analytics", label: "Analytics", section: "Analytics", product: "platform", icon: LineChart, permission: "reporting.view" },
 
   // ---- Platform ----
+  { href: "/demo", label: "Guided Demo", section: "Platform", product: "platform", icon: PlayCircle },
   { href: "/tenants", label: "Tenants", section: "Platform", product: "platform", icon: Building2, permission: "admin.identity" },
   { href: "/users", label: "Users & Roles", section: "Platform", product: "platform", icon: Users, permission: "admin.identity" },
   { href: "/entitlements", label: "Entitlements", section: "Platform", product: "platform", icon: KeyRound, permission: "admin.identity" },

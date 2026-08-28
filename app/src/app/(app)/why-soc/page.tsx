@@ -23,7 +23,12 @@ export default function WhySocPage() {
 
   return (
     <>
-      <PageHeader title="Why a SOC" description={C.hero.lede} />
+      <PageHeader title="Why a SOC" />
+
+      <p className="mb-4 max-w-3xl font-display text-xl font-bold leading-snug tracking-tight sm:text-2xl">
+        {C.hero.title}
+      </p>
+      <p className="mb-10 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">{C.hero.lede}</p>
 
       {q.isError && <QueryErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.isLoading && <TableSkeleton rows={8} cols={3} />}

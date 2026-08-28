@@ -1,51 +1,43 @@
 /**
  * Editorial copy for the /why-soc explainer, kept in one place so it can be
- * rewritten without touching the page.
- *
- * The stage captions and agent lines are factual and derived from the demo's
- * real data — safe to ship as-is. The four `TODO(copy)` blocks below are the
- * persuasive narrative; replace the placeholder text with the ZenC messaging.
+ * rewritten without touching the page. Stage captions and agent lines are
+ * factual and derived from the demo's real data; the narrative blocks are
+ * marketing copy and can be swapped freely.
  */
 
 export const WHY_SOC_CONTENT = {
   hero: {
     eyebrow: "Why a SOC",
-    // TODO(copy): the one-line thesis.
-    title: "A modern estate speaks faster than any team can listen.",
-    // TODO(copy): 1–2 sentences under the title.
-    lede: "A Security Operations Center exists to turn that noise into a short, ranked list of things a human must decide — and to do the rest automatically, under guardrails.",
+    title: "Your environment generates more security signal in a day than a team could read in a year.",
+    lede: "A Security Operations Center is the machinery that turns that signal into a short, ranked list of things a person actually has to decide — and handles everything before and after it automatically, inside fixed guardrails.",
   },
 
   problem: {
-    // TODO(copy): the section heading.
     title: "The volume problem",
-    // TODO(copy): 2–3 short paragraphs. The live numbers (events/day, device
-    // families, quarantine rate) are injected by the page around this copy.
     body: [
-      "Every endpoint, firewall, identity provider and cloud control plane emits a continuous stream of events. Individually each one is unremarkable. Together they are unreadable.",
-      "Without a pipeline that reduces and correlates this stream, a real intrusion looks exactly like a quiet Tuesday — until it doesn't.",
+      "Every endpoint, firewall, identity provider and cloud control plane emits events without pause. Each one, on its own, is unremarkable — a login, a blocked packet, a script that ran.",
+      "No one reads that. So the question a SOC actually answers is not “what happened” — it is “which of these thousands of events are the same incident, and does it matter enough to act on tonight.”",
+      "Without a pipeline that reduces, correlates and enriches the stream, a genuine intrusion is indistinguishable from a quiet Tuesday — until the quiet Tuesday is a breach notification.",
     ],
   },
 
   funnel: {
     title: "From raw telemetry to a decision",
-    lede: "Each stage narrows the stream and adds context. The figures below are live from the Northwind Bank demo tenant.",
+    lede: "Each stage narrows the stream and adds context. Every figure below is live from the Northwind Bank demo tenant — the funnel narrows because the real data does.",
   },
 
   agents: {
     title: "Where the automation sits",
-    // TODO(copy): 1–2 sentences framing the agent model.
-    lede: "Eleven bounded agents work the pipeline. Each has a fixed job, a fixed tool allowlist, and a fixed autonomy ceiling — they recommend and draft; humans and deterministic services decide and execute.",
+    lede: "The reduction from a firehose to a decision is a pipeline, and most of it runs without a person. Eleven bounded agents do the repetitive work — normalizing, enriching, drafting queries, proposing responses. Each has one job, a fixed set of tools, and an autonomy ceiling it cannot raise. They recommend and draft; people and deterministic services decide and act.",
   },
 
   outcome: {
-    // TODO(copy): the closing heading + a sentence.
     title: "What the team is left with",
-    lede: "A ranked queue, a cited trail behind every recommendation, and a mean time-to-detect measured in minutes.",
+    lede: "Not an inbox of alerts. A ranked queue of real cases, every recommendation carrying the evidence behind it, a mean time-to-detect measured in minutes, and a response path that stays dry-run until a second person signs off. Analysts spend their hours on judgement, not triage.",
   },
 } as const;
 
-/** Short label + "never does" for each agent, keyed by agent name. */
+/** One line per agent — its job and the line it will not cross. */
 export const AGENT_STAGE_ROLE: Record<string, string> = {
   "intake-agent": "Normalizes every inbound alert to the envelope shape at the boundary.",
   "detection-engineer-agent": "Proposes and tests correlation rules against the synthetic corpus — never enables one.",

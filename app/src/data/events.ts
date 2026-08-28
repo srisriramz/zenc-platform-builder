@@ -514,6 +514,7 @@ function injectAttackScenarios(raw: RawEvent[], normalized: NormalizedEvent[]): 
     startMinutesAgo: number,
     spanMinutes: number,
     build: (i: number) => { event_type: string; entities: Entity[]; attack_technique_refs?: string[]; rawBody: Record<string, unknown> },
+    tenantId = "tenant-northwind-bank",
   ) => {
     const info = PARSER_INFO[family];
     for (let i = 0; i < n; i++) {
@@ -524,7 +525,7 @@ function injectAttackScenarios(raw: RawEvent[], normalized: NormalizedEvent[]): 
       const rawRef = `seed-fixtures/${sourceId}/scenario-${tag}-${String(i + 1).padStart(3, "0")}.json`;
       raw.push({
         raw_payload_ref: rawRef,
-        tenant_id: "tenant-northwind-bank",
+        tenant_id: tenantId,
         telemetry_source_id: sourceId,
         received_at: ingested_at,
         format: info.format,
@@ -532,7 +533,7 @@ function injectAttackScenarios(raw: RawEvent[], normalized: NormalizedEvent[]): 
       });
       normalized.push({
         event_id: `nevt-scn-${tag}-${String(i + 1).padStart(3, "0")}`,
-        tenant_id: "tenant-northwind-bank",
+        tenant_id: tenantId,
         telemetry_source_id: sourceId,
         occurred_at,
         ingested_at,
@@ -599,4 +600,25 @@ function injectAttackScenarios(raw: RawEvent[], normalized: NormalizedEvent[]): 
     ],
     rawBody: { app: "sshd", msg: "Accepted password for svc-deploy from 192.0.2.51" },
   }));
+
+  // Scenario 4 — Northwind Markets (SIEM-only tenant): a credential brute force,
+  // so the SIEM-alone walkthrough has a real fired alert, not just wired rules.
+  add(
+    "ts-nwm-identity-01",
+    "identity",
+    "nwm-brute",
+    16,
+    30 * 60,
+    8,
+    () => ({
+      event_type: "idp_signin_failure",
+      entities: [
+        { entity_type: "user", value: "j.okafor" },
+        { entity_type: "ip", value: "203.0.113.90" },
+      ],
+      attack_technique_refs: ["T1110"],
+      rawBody: { activity: "UserLoginFailed", errorCode: 50126 },
+    }),
+    "tenant-northwind-markets",
+  );
 }

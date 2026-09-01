@@ -256,21 +256,28 @@ export function DetectionAnalytics() {
           </CardContent>
         </Card>
 
-        <Card className="border-dashed">
-          <CardHeader>
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Rocket className="size-4 text-primary" />
-              Detection engineering
+              Detection coverage
             </CardTitle>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/coverage">
+                Matrix
+                <ArrowUpRight className="size-3.5" />
+              </Link>
+            </Button>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>
-              Detection activity and rule health are live (above). Still to come: the agent-assisted authoring workflow
-              with live regression runs, and the per-technique ATT&amp;CK × D3FEND coverage percentages.
+              {a.detection.enabledRules}/{a.detection.totalRules} rules enabled, {a.detection.rulesWithD3fend} with a
+              D3FEND mapping. The per-technique ATT&amp;CK × D3FEND coverage matrix — staged honestly along the detection
+              pipeline — and the derived detection / defensive coverage % live on the Coverage screen.
             </p>
             <div className="flex flex-wrap gap-2 pt-1">
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Rule authoring workflow → M3</span>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Coverage % → M5</span>
+              <Link href="/detections" className="rounded-full bg-muted px-2 py-0.5 text-xs hover:bg-accent">Rule authoring workflow</Link>
+              <Link href="/coverage" className="rounded-full bg-muted px-2 py-0.5 text-xs hover:bg-accent">ATT&amp;CK × D3FEND coverage</Link>
             </div>
           </CardContent>
         </Card>

@@ -26,6 +26,21 @@ export const PRODUCT_LABEL_FULL: Record<ProductArea, string> = { siem: "ZenC SIE
 export type ThemePref = "light" | "dark" | "system";
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
 
+/**
+ * The guided-demo controller (references/launch-demo-spec.md). It is runtime
+ * state only — deliberately NOT persisted, so a page reload ends the walkthrough
+ * cleanly rather than resuming it in a half-mutated state. `vars` carries IDs
+ * the script resolves as it runs (the case it opened, the action request it
+ * submitted) so later steps can act on them.
+ */
+export interface GuidedDemoState {
+  scriptId: string;
+  stepIndex: number;
+  vars: Record<string, string>;
+  status: "running" | "error";
+  error?: string;
+}
+
 interface SessionState {
   userId: string | null;
   tenantId: string | null;
@@ -34,6 +49,7 @@ interface SessionState {
   sim: SimMode;
   sidebarCollapsed: boolean;
   hydrated: boolean;
+  guidedDemo: GuidedDemoState | null;
 
   signIn: (userId: string, tenantId: string) => void;
   signOut: () => void;
@@ -42,6 +58,11 @@ interface SessionState {
   setTheme: (t: ThemePref) => void;
   setSim: (s: SimMode) => void;
   toggleSidebar: () => void;
+  startDemo: (scriptId: string) => void;
+  setDemoStep: (stepIndex: number) => void;
+  setDemoVars: (vars: Record<string, string>) => void;
+  setDemoStatus: (status: GuidedDemoState["status"], error?: string) => void;
+  exitDemo: () => void;
   _setHydrated: () => void;
 }
 
@@ -55,14 +76,23 @@ export const useSession = create<SessionState>()(
       sim: "normal",
       sidebarCollapsed: false,
       hydrated: false,
+      guidedDemo: null,
 
       signIn: (userId, tenantId) => set({ userId, tenantId }),
-      signOut: () => set({ userId: null, tenantId: null, sim: "normal" }),
+      signOut: () => set({ userId: null, tenantId: null, sim: "normal", guidedDemo: null }),
       setTenant: (tenantId) => set({ tenantId }),
       setProduct: (product) => set({ product }),
       setTheme: (theme) => set({ theme }),
       setSim: (sim) => set({ sim }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+      startDemo: (scriptId) => set({ guidedDemo: { scriptId, stepIndex: 0, vars: {}, status: "running" } }),
+      setDemoStep: (stepIndex) =>
+        set((s) => (s.guidedDemo ? { guidedDemo: { ...s.guidedDemo, stepIndex, status: "running", error: undefined } } : {})),
+      setDemoVars: (vars) =>
+        set((s) => (s.guidedDemo ? { guidedDemo: { ...s.guidedDemo, vars: { ...s.guidedDemo.vars, ...vars } } } : {})),
+      setDemoStatus: (status, error) =>
+        set((s) => (s.guidedDemo ? { guidedDemo: { ...s.guidedDemo, status, error } } : {})),
+      exitDemo: () => set({ guidedDemo: null }),
       _setHydrated: () => set({ hydrated: true }),
     }),
     {

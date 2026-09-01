@@ -32,6 +32,8 @@ import {
   fetchActionLog,
   fetchCaseOrchestration,
   fetchKillSwitches,
+  fetchSocReport,
+  runReportingAgent,
   toggleKillSwitch,
   type AddEvidenceInput,
   type AddTaskInput,
@@ -126,6 +128,23 @@ export function useCaseOrchestration(caseId: string | null) {
 export function useKillSwitches() {
   const ctx = useSessionContext();
   return useQuery({ queryKey: ["kill-switches", ctx?.tenantId], queryFn: () => fetchKillSwitches(ctx!), enabled: !!ctx });
+}
+
+export function useSocReport() {
+  const ctx = useSessionContext();
+  return useQuery({ queryKey: ["soc-report", ctx?.tenantId], queryFn: () => fetchSocReport(ctx!), enabled: !!ctx });
+}
+
+export function useRunReportingAgent() {
+  const ctx = useSessionContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => runReportingAgent(ctx!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["soc-report"] });
+      qc.invalidateQueries({ queryKey: ["agent-runs"] });
+    },
+  });
 }
 
 function useSocInvalidation() {

@@ -18,6 +18,7 @@ import {
 import type { BootstrapData } from "@/mock/api";
 import { ROLES } from "@/data/platform";
 import { PRODUCT_LABEL, useSession, type SimMode } from "@/store/session";
+import { ZencMark } from "@/components/brand/zenc-logo";
 import { Button } from "@/components/ui/button";
 import { Badge, Kbd } from "@/components/ui/primitives";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu";
@@ -66,12 +67,12 @@ export function TopBar({
           <MenuIcon className="size-4" />
         </Button>
 
-        <div className="flex items-center gap-2 font-semibold">
-          <span className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-primary to-[color-mix(in_oklch,var(--primary)_55%,var(--info))] text-primary-foreground shadow-sm">
-            <ShieldCheck className="size-4" />
+        <a href="/siem-dashboard" aria-label="ZenC — home" className="flex items-center gap-2 rounded-md">
+          <ZencMark size={26} className="text-foreground" />
+          <span className="hidden font-display text-[0.95rem] font-bold leading-none tracking-tight sm:inline">
+            Zen<span className="text-primary">C</span>
           </span>
-          <span className="hidden text-sm tracking-tight sm:inline">ZenC</span>
-        </div>
+        </a>
 
         {/* product switcher */}
         <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs">
@@ -119,7 +120,7 @@ export function TopBar({
             <Button
               variant={sim === "normal" ? "ghost" : "outline"}
               size="sm"
-              className={cn("hidden sm:inline-flex", sim !== "normal" && "border-[var(--warning)] text-[var(--warning)]")}
+              className={cn("hidden md:inline-flex", sim !== "normal" && "border-[var(--warning)] text-[var(--warning)]")}
             >
               <span className={cn("size-1.5 rounded-full", sim === "normal" ? "bg-[var(--success)]" : "bg-[var(--warning)]")} />
               {SIM_OPTIONS.find((o) => o.value === sim)?.label}
@@ -156,7 +157,7 @@ export function TopBar({
           trigger={
             <Button variant="outline" size="sm">
               <Building2 className="size-3.5" />
-              <span className="hidden max-w-[9rem] truncate sm:inline">{activeTenant?.name ?? "Tenant"}</span>
+              <span className="hidden max-w-[9rem] truncate md:inline">{activeTenant?.name ?? "Tenant"}</span>
               <ChevronsUpDown className="size-3" />
             </Button>
           }

@@ -16,7 +16,7 @@ export default function UsersPage() {
     <>
       <PageHeader
         title="Users & Roles"
-        description="RBAC roles (analyst, senior analyst, approver, admin, reviewer, auditor) assigned per tenant. Agent tool access is allowlisted separately — never inherited from a user."
+        description="RBAC roles (analyst, senior analyst, approver, SOC manager, CISO, admin, reviewer, auditor, super admin) assigned per tenant. Agent tool access is allowlisted separately — never inherited from a user."
       />
 
       <Card>

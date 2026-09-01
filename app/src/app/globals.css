@@ -4,104 +4,123 @@
 
 /*
   ZenC Platform — design tokens.
-  Dark-first product surface with a light counterpart. shadcn/ui-compatible
-  token names so primitives in components/ui stay portable. Every color has a
-  bare-:root definition; the dark block only re-points the same names.
+  Palette + type match the ZenC Labs brand site (zenclabs): a jade-green
+  accent (#86bc25) on a near-black, blue-tinted surface, with a gold
+  secondary accent. Dark-first, with a derived light counterpart. Every
+  color has a bare-:root (light) definition; `.dark` re-points the same
+  names. shadcn/ui-compatible names so primitives stay portable.
 */
 :root {
-  --radius: 0.7rem;
+  --radius: 0.85rem;
 
-  --background: oklch(0.99 0.002 265);
-  --foreground: oklch(0.22 0.02 265);
+  --background: oklch(0.99 0.003 250);
+  --foreground: oklch(0.2 0.02 262);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.02 265);
-  --card-elevated: oklch(0.985 0.003 265);
+  --card-foreground: oklch(0.2 0.02 262);
+  --card-elevated: oklch(0.984 0.004 250);
 
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.02 265);
+  --popover-foreground: oklch(0.2 0.02 262);
 
-  --primary: oklch(0.52 0.16 245);
-  --primary-foreground: oklch(0.99 0.002 265);
+  /* jade brand. On the near-black dark theme the bright brand green carries
+     dark ink text (as on the brand site); on white it has to darken to stay
+     legible as both a fill and a text colour, so light mode uses a deeper
+     grass green with near-white text. */
+  --primary: oklch(0.54 0.14 135);
+  --primary-foreground: oklch(0.99 0.012 130);
 
-  --secondary: oklch(0.965 0.005 265);
-  --secondary-foreground: oklch(0.28 0.03 265);
+  --secondary: oklch(0.96 0.006 250);
+  --secondary-foreground: oklch(0.28 0.03 262);
 
-  --muted: oklch(0.96 0.005 265);
-  --muted-foreground: oklch(0.5 0.015 265);
+  --muted: oklch(0.962 0.005 250);
+  --muted-foreground: oklch(0.48 0.02 258);
 
-  --accent: oklch(0.955 0.007 265);
-  --accent-foreground: oklch(0.24 0.03 265);
+  --accent: oklch(0.95 0.03 128);
+  --accent-foreground: oklch(0.26 0.04 262);
 
   --destructive: oklch(0.58 0.22 25);
   --destructive-foreground: oklch(0.99 0 0);
 
-  --success: oklch(0.58 0.13 155);
-  --warning: oklch(0.68 0.13 70);
-  --info: oklch(0.55 0.14 240);
+  --success: oklch(0.56 0.13 165);
+  --warning: oklch(0.72 0.12 82);
+  --info: oklch(0.55 0.13 240);
+  --gold: oklch(0.72 0.12 82);
 
-  --border: oklch(0.9 0.006 265);
-  --border-strong: oklch(0.83 0.008 265);
-  --input: oklch(0.88 0.006 265);
-  --ring: oklch(0.52 0.16 245);
+  --border: oklch(0.9 0.006 258);
+  --border-strong: oklch(0.82 0.01 258);
+  --input: oklch(0.87 0.008 258);
+  --ring: oklch(0.54 0.14 135);
 
-  --sev-critical: oklch(0.5 0.22 12);
+  --sev-critical: oklch(0.5 0.22 14);
   --sev-high: oklch(0.58 0.18 42);
-  --sev-medium: oklch(0.64 0.13 85);
-  --sev-low: oklch(0.52 0.11 264);
-  --sev-informational: oklch(0.56 0.015 265);
+  --sev-medium: oklch(0.64 0.13 78);
+  --sev-low: oklch(0.52 0.12 255);
+  --sev-informational: oklch(0.56 0.015 262);
 
-  --chart-grid: oklch(0.9 0.006 265);
+  --chart-grid: oklch(0.9 0.006 258);
 
-  --shadow-color: 265 40% 12%;
+  --shadow-color: 258 42% 12%;
 }
 
 .dark {
-  --background: oklch(0.178 0.006 265);
-  --foreground: oklch(0.96 0.004 265);
+  --background: oklch(0.115 0.012 265);
+  --foreground: oklch(0.948 0.012 260);
 
-  --card: oklch(0.223 0.007 265);
-  --card-foreground: oklch(0.96 0.004 265);
-  --card-elevated: oklch(0.278 0.009 265);
+  --card: oklch(0.163 0.022 264);
+  --card-foreground: oklch(0.948 0.012 260);
+  --card-elevated: oklch(0.198 0.036 266);
 
-  --popover: oklch(0.262 0.009 265);
-  --popover-foreground: oklch(0.96 0.004 265);
+  --popover: oklch(0.18 0.032 267);
+  --popover-foreground: oklch(0.948 0.012 260);
 
-  --primary: oklch(0.72 0.14 233);
-  --primary-foreground: oklch(0.16 0.02 265);
+  /* #86bc25 jade — dark ink (#102005) text sits on it */
+  --primary: oklch(0.731 0.18 128);
+  --primary-foreground: oklch(0.2 0.05 134);
 
-  --secondary: oklch(0.3 0.011 265);
-  --secondary-foreground: oklch(0.95 0.004 265);
+  --secondary: oklch(0.24 0.022 264);
+  --secondary-foreground: oklch(0.95 0.008 260);
 
-  --muted: oklch(0.288 0.01 265);
-  --muted-foreground: oklch(0.72 0.016 265);
+  --muted: oklch(0.22 0.02 264);
+  --muted-foreground: oklch(0.705 0.033 259);
 
   --accent: oklch(1 0 0 / 6%);
-  --accent-foreground: oklch(0.97 0.003 265);
+  --accent-foreground: oklch(0.97 0.006 260);
 
-  --destructive: oklch(0.68 0.19 22);
+  --destructive: oklch(0.64 0.2 22);
   --destructive-foreground: oklch(0.16 0.02 265);
 
-  --success: oklch(0.74 0.14 158);
-  --warning: oklch(0.82 0.13 82);
-  --info: oklch(0.74 0.12 233);
+  --success: oklch(0.74 0.15 165);
+  --warning: oklch(0.829 0.117 87);
+  --info: oklch(0.72 0.12 235);
+  --gold: oklch(0.829 0.117 87);
 
-  --border: oklch(1 0 0 / 9.5%);
-  --border-strong: oklch(1 0 0 / 18%);
-  --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.72 0.15 233);
+  --border: oklch(0.95 0.02 260 / 9%);
+  --border-strong: oklch(0.95 0.02 260 / 17%);
+  --input: oklch(0.95 0.02 260 / 13%);
+  --ring: oklch(0.731 0.18 128);
 
-  --sev-critical: oklch(0.66 0.24 14);
+  --sev-critical: oklch(0.64 0.24 16);
   --sev-high: oklch(0.72 0.18 45);
-  --sev-medium: oklch(0.83 0.13 85);
-  --sev-low: oklch(0.7 0.11 264);
-  --sev-informational: oklch(0.72 0.018 265);
+  --sev-medium: oklch(0.8 0.13 74);
+  --sev-low: oklch(0.7 0.12 255);
+  --sev-informational: oklch(0.72 0.018 262);
 
-  --chart-grid: oklch(1 0 0 / 8%);
+  --chart-grid: oklch(0.95 0.02 260 / 7%);
 
-  --shadow-color: 265 60% 3%;
+  --shadow-color: 262 65% 2%;
 }
 
+/*
+  Chart palette note (dataviz skill): the accent colours are deliberately
+  bright on the near-black surface to match the brand site, which puts them
+  above the validator's dark-mode lightness band for a *categorical* palette.
+  That check does not bind here — the app has no unlabeled multi-hue series.
+  Every chart is single-series (jade `--primary`), a text-labelled status ramp
+  (`--sev-*`, connector health), or the one two-series detect/respond bar,
+  which uses `--success` + `--info` (they clear the normal-vision separation
+  floor) with a text label on each. Status colours always ship with a label.
+*/
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -123,6 +142,7 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-info: var(--info);
+  --color-gold: var(--gold);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
@@ -139,8 +159,9 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: var(--font-albert), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sora), var(--font-albert), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
 
   --shadow-xs: 0 1px 2px hsl(var(--shadow-color) / 0.10);
   --shadow-sm: 0 1px 3px hsl(var(--shadow-color) / 0.16), 0 1px 2px hsl(var(--shadow-color) / 0.10);
@@ -174,6 +195,9 @@
     0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ring) 45%, transparent); }
     70%, 100% { box-shadow: 0 0 0 6px transparent; }
   }
+  @keyframes orbit {
+    to { transform: rotate(360deg); }
+  }
 }
 
 @layer base {
@@ -187,11 +211,23 @@
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
+    /* Brand site runs 17px body copy. We bump the base ~7% so prose and
+       descriptions read at that marketing scale, while the dense grids that
+       set text-sm / text-xs explicitly are untouched (those track rem, not
+       body). */
+    font-size: 1.0625rem;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
+  /* Sora carries every heading; tight tracking mirrors the brand site. */
+  h1, h2, h3, h4, h5, h6, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+  h1 { letter-spacing: -0.03em; }
   ::selection {
-    background: color-mix(in oklch, var(--primary) 30%, transparent);
+    background: color-mix(in oklch, var(--primary) 34%, transparent);
     color: var(--foreground);
   }
   :focus-visible {

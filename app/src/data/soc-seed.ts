@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentRun, AlertEnvelope, Case, Evidence, NormalizedEvent, Task, TelemetrySourceFamily } from "@/schemas";
+import type { AgentMessage, AgentRun, AlertEnvelope, AnalystFeedback, Case, Evidence, NormalizedEvent, Task, TelemetrySourceFamily } from "@/schemas";
 import { DEMO_NOW_ISO, minus, secondsBetween } from "@/lib/time";
 import { hashString } from "@/lib/prng";
 import { ROLES, USERS, TENANT_MAP } from "@/data/platform";
@@ -479,6 +479,31 @@ export function buildSocLayer(
       theCase.evidence_ids = layer.evidence.map((e) => e.evidence_id);
       theCase.task_ids = layer.tasks.map((t) => t.task_id);
     }
+  }
+
+  // Backfill analyst feedback on a deterministic subset (closed cases' investigation
+  // runs) so the agent-acceptance-rate KPI (lib/soc/reporting.ts) has real signal out
+  // of the box instead of every run showing analyst_feedback: null.
+  for (const c of cases) {
+    if (c.status !== "closed" || !c.closure) continue;
+    const investRun = agentRuns.find((r) => r.agent_run_id === `run-investigate-${c.case_id}`);
+    if (!investRun) continue;
+    const acceptance: NonNullable<AnalystFeedback["acceptance"]> =
+      c.closure.classification === "false_positive" || c.closure.classification === "benign_true_positive"
+        ? "rejected"
+        : c.closure.classification === "duplicate" || c.closure.classification === "suppressed"
+          ? "modified"
+          : "accepted";
+    investRun.analyst_feedback = {
+      human_determination:
+        acceptance === "accepted"
+          ? "Findings held up — closed as reported."
+          : acceptance === "rejected"
+            ? "Findings didn't hold up on review — closed differently than proposed."
+            : "Findings were directionally right but needed adjustment before closing.",
+      acceptance,
+      maps_to_closure_classification: c.closure.classification,
+    };
   }
 
   return { intakeItems, candidates, triageResults, cases, evidence, tasks, agentRuns, agentMessages, candidateCaseId };

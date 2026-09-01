@@ -2,12 +2,26 @@
 
 import * as React from "react";
 import { Lock, ShieldAlert, ShieldCheck } from "lucide-react";
-import { usePolicies } from "@/hooks/use-platform";
+import { usePolicies, useUpdateTenantPolicy } from "@/hooks/use-platform";
 import { useKillSwitches, useToggleKillSwitch } from "@/hooks/use-soc";
+import type { TenantPolicy } from "@/data/platform";
 import { PageHeader } from "@/components/shell/page-header";
 import { Card, CardContent, CardHeader, CardTitle, Badge, Input } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { QueryErrorState, LoadingState } from "@/components/states";
+
+const AUTONOMY_LEVELS: { level: TenantPolicy["default_autonomy_level"]; label: string }[] = [
+  { level: "L1", label: "L1 · Read-only investigation" },
+  { level: "L2", label: "L2 · Recommend + approval" },
+  { level: "L3", label: "L3 · Bounded reversible execution" },
+  { level: "L4", label: "L4 · Narrow emergency + rollback" },
+];
+
+const ACTION_CLASSES: { cls: "A1" | "A2" | "A3"; label: string }[] = [
+  { cls: "A1", label: "A1 · Read-only retrieval" },
+  { cls: "A2", label: "A2 · Reversible internal change" },
+  { cls: "A3", label: "A3 · Security-control change" },
+];
 
 export default function PoliciesPage() {
   const policies = usePolicies();
@@ -32,10 +46,11 @@ export default function PoliciesPage() {
                 <CardTitle>{t.name} — policy</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-2">
-                <Field label="Default autonomy level (new agent capability)" value={t.policy.default_autonomy_level} />
-                <Field
-                  label="Pre-authorized action classes"
-                  value={t.policy.pre_authorized_action_classes.join(", ") || "none"}
+                <AutonomyLevelField tenantId={t.tenant_id} value={t.policy.default_autonomy_level} editable={!!policies.data.can_edit_policy} />
+                <ActionClassesField
+                  tenantId={t.tenant_id}
+                  value={t.policy.pre_authorized_action_classes}
+                  editable={!!policies.data.can_edit_policy}
                 />
                 <Field
                   label="L3 pre-authorized A3 action types"
@@ -113,6 +128,73 @@ function KillSwitchCard() {
         {toggle.isError && <p className="text-xs text-[var(--destructive)]">{(toggle.error as Error)?.message}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+function AutonomyLevelField({
+  tenantId,
+  value,
+  editable,
+}: {
+  tenantId: string;
+  value: TenantPolicy["default_autonomy_level"];
+  editable: boolean;
+}) {
+  const update = useUpdateTenantPolicy();
+  if (!editable) return <Field label="Default autonomy level (new agent capability)" value={AUTONOMY_LEVELS.find((l) => l.level === value)?.label ?? value} />;
+  return (
+    <div>
+      <p className="text-xs font-medium text-muted-foreground">Default autonomy level (new agent capability)</p>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {AUTONOMY_LEVELS.map((l) => (
+          <Button
+            key={l.level}
+            size="sm"
+            variant={l.level === value ? "default" : "outline"}
+            disabled={update.isPending}
+            onClick={() => update.mutate({ tenantId, patch: { default_autonomy_level: l.level } })}
+          >
+            {l.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActionClassesField({
+  tenantId,
+  value,
+  editable,
+}: {
+  tenantId: string;
+  value: ("A0" | "A1" | "A2" | "A3" | "A4")[];
+  editable: boolean;
+}) {
+  const update = useUpdateTenantPolicy();
+  if (!editable) return <Field label="Pre-authorized action classes" value={value.join(", ") || "none"} />;
+  const toggle = (cls: "A1" | "A2" | "A3") => {
+    const next = value.includes(cls) ? value.filter((c) => c !== cls) : [...value, cls];
+    update.mutate({ tenantId, patch: { pre_authorized_action_classes: next } });
+  };
+  return (
+    <div>
+      <p className="text-xs font-medium text-muted-foreground">Pre-authorized action classes</p>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {ACTION_CLASSES.map((a) => (
+          <Button
+            key={a.cls}
+            size="sm"
+            variant={value.includes(a.cls) ? "default" : "outline"}
+            disabled={update.isPending}
+            onClick={() => toggle(a.cls)}
+          >
+            {a.label}
+          </Button>
+        ))}
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">A4 is never offered here — it always requires independent human approval.</p>
+    </div>
   );
 }
 

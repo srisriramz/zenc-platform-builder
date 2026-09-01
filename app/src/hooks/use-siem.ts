@@ -97,12 +97,12 @@ export function useCorrelationRules() {
   });
 }
 
-export function useCoverageMatrix() {
+export function useCoverageMatrix(enabled = true) {
   const ctx = useSessionContext();
   return useQuery({
     queryKey: ["coverage-matrix", ctx?.tenantId],
     queryFn: () => fetchCoverageMatrix(ctx!),
-    enabled: !!ctx,
+    enabled: !!ctx && enabled,
   });
 }
 

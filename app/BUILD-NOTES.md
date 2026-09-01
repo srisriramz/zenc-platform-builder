@@ -15,7 +15,22 @@ follow `templates/claude-code-bootstrap.md`.
 | **M4a** | SOAR intake & triage — envelope intake, dedup, grouping, Triage Agent, cases | ✅ done |
 | **M4b** | SOAR investigation — evidence + custody, timeline, tasks/SLA, Enrichment/Investigation/Hunt/Advisor agents | ✅ done |
 | **M4c** | SOAR response — playbooks, Response Planner, approval queue, dry-run executor, kill switches, Supervisor + QA/Governance | ✅ done |
-| M5 | ATT&CK × D3FEND coverage matrix + SOC reporting | not started |
+| **M5** | ATT&CK × D3FEND coverage matrix (`/coverage`) + SOC reporting (`/reporting`, Reporting Agent) + role-aware analytics presets | ✅ done |
+| **Hardening** | Agent-safety + security review passes, guided-demo controller, persona sweep, nav/palette audit | ✅ done |
+| **Self-service** | Onboarding wizard (`/onboarding`: create tenant → invite user → add + validate a data source), editable per-tenant autonomy level + pre-authorized action classes on `/policies`, agent-acceptance-rate KPI on `/reporting` | ✅ done |
+
+Phase 2 (ZenC Assessment) stays dormant — not built.
+
+**Wizard-created tenants/users are first-class**, not cosmetic seed dressing —
+`mock/rbac.ts`'s `resolveUser`/`resolveTenant` check the session overlay
+(`mock/session-store.ts`'s `addedTenants`/`addedUsers`) alongside the static
+`USER_MAP`/`TENANT_MAP`, so a user created via the wizard can immediately log
+in (the login persona picker itself reads the same merged list via
+`listLoginUsers()`/`listLoginTenantNames()` in `mock/api.ts`) and use every
+RBAC/entitlement-gated screen in their new tenant. Like the rest of the mock
+backend, this state lives in an in-memory module singleton and resets on a
+hard page reload — client-side navigation preserves it, a browser refresh
+does not (this is the existing, documented demo-reset behavior, not new).
 
 ## Stack
 
@@ -28,10 +43,18 @@ product, theme, sim, sidebar), Recharts, Zod runtime schemas mirroring
 ## Design system
 
 Dark-first enterprise SOC surface, fully theme-aware (dark / light / system).
+Skinned to match the ZenC Labs brand site (zenclabs): a jade-green accent
+(`#86bc25`) on a near-black, blue-tinted surface with a gold secondary
+accent; **Sora** for display / headings, **Albert Sans** for body,
+**JetBrains Mono** for mono. Dark mode carries the bright brand green with
+dark ink text; light mode uses a deeper grass green so the accent stays
+legible on white.
 - Tokens in `app/globals.css` — one `:root` (light) definition per color,
   `.dark` re-points the same names. shadcn-compatible names + a severity ramp
-  (`--sev-*`), elevation (`--card` / `--card-elevated` / `--popover`), and a
-  shadow scale keyed to a per-theme shadow color.
+  (`--sev-*`), elevation (`--card` / `--card-elevated` / `--popover`), `--gold`,
+  and a shadow scale keyed to a per-theme shadow color.
+- Buttons are pills (`rounded-full`) in the display font; page mastheads use
+  the large Sora scale with tight tracking.
 - Primitives: `Card` (hairline top-highlight + optional `interactive` lift),
   `Badge`, `Button`, `Table` (sticky headers via `<TableHeader sticky>`,
   scroll container), `Tabs`, `Menu`/`Dialog`/`Sheet` (scale-in / slide-in,
@@ -62,10 +85,14 @@ component API, no dependency on the CLI.
   partners, per-tenant entitlements (`has_siem`/`has_soc`/`has_assessment`),
   Policy Engine with locked non-negotiable fields, append-only Audit, Feature
   flags via the sim control, Observability via connector health.
-- **RBAC**: 6 roles (analyst, senior analyst, approver, admin, reviewer,
-  auditor); permissions are checked in the mock API, not just hidden in the
-  UI. `rule.enable` / `action.approve` are separate permissions; agents are
-  never modelled as holding them.
+- **RBAC**: 9 roles (analyst, senior analyst, approver, SOC manager, CISO,
+  admin, reviewer, auditor, super admin); permissions are checked in the mock
+  API, not just hidden in the UI. `rule.enable` / `action.approve` are
+  separate permissions; agents are never modelled as holding them.
+  `super_admin` is a documented break-glass exception — it holds every
+  permission (including combinations no operational role may bundle) and
+  bypasses tenant product entitlements, but still cannot self-approve its own
+  action requests since that check is identity-based, not permission-based.
 - **Seeded ATT&CK + D3FEND libraries** as static data
   (`data/frameworks/`) — 24 techniques / 11 tactics, 16 D3FEND techniques.
   The product maps to them; it never edits them.
@@ -292,11 +319,79 @@ component API, no dependency on the CLI.
 - **Screens** — `/playbooks`, `/actions` new; `/approvals` real;
   `/cases/[id]` Response tab (Supervisor summary + plan + per-step request +
   execute); `/policies` kill switches toggle; `/agents` marks Response
-  Planner / Supervisor / QA & Governance **live** (only Reporting → M5 and
-  Assessment Assistant → Phase 2 remain).
+  Planner / Supervisor / QA & Governance **live** (at this point only the
+  Reporting Agent — landed in M5 — and the Phase 2 Assessment Assistant
+  were still dormant).
 - Audit gains `action_requested` / `action_verified` / `action_expired`. 34
   new SOAR tests (playbook lifecycle, approval, executor incl. kill-switch
   halt + idempotency + rollback, planner, QA verdicts, schema invariants). **184 tests.**
+
+## M5 — what's in
+
+- **ATT&CK × D3FEND coverage matrix** (`lib/coverage/matrix.ts`, `/coverage`)
+  — per-technique staging along an honest pipeline: `no_telemetry →
+  telemetry → activity → detected → correlated`. A technique only reaches
+  `detected` if an **enabled** rule targets it, `correlated` only if an
+  alert actually fired. The response side is a separate axis: covered only
+  by an **enabled** playbook with a D3FEND-mapped step for that technique.
+  Derived KPIs — detection coverage % and defensive (response) coverage %
+  — and a per-tactic heat strip. SIEM-gated; the response column shows
+  "—" for a SIEM-only tenant. `store.frameworks` gains `attackVersion` /
+  `d3fendVersion`.
+- **SOC reporting** (`lib/soc/reporting.ts`, `/reporting`) — `buildSocReport`
+  rolls up the M4 pipeline: MTTD / MTTA / MTTR, a 5-stage pipeline-latency
+  breakdown (collection → SIEM detection → handoff → SOC ack → resolve),
+  alert-to-case conversion, closure mix, SLA compliance, agent-assisted
+  ratio, top ATT&CK techniques, and the coverage KPIs when the tenant has
+  SIEM. Native stages show "—" for a SOC-only tenant (no SIEM to measure).
+- **Reporting Agent** — the 11th live agent. `draftReportNarrative`
+  composes a deterministic narrative from the KPI aggregate; it is always
+  a **draft** and always closes "External-facing copy requires human
+  review and sign-off." `runReportingAgent` records a `run-report-*` run.
+- **Analytics presets now real** (`components/analytics/`) — the **SOC
+  Manager** view (queue/backlog, analyst workload, closure mix,
+  detection-engineering throughput by lifecycle state, agent acceptance)
+  and the **Executive / CISO** view (detection + defensive coverage %,
+  MTTD→MTTR, open critical incidents, pipeline latency, top adversary
+  techniques, SLA, response success, Reporting Agent draft) replace their
+  stubs. Each recomposes the same SIEM/SOAR KPIs at a higher altitude and
+  degrades — "—" / "needs ZenC SIEM" — when a product is absent for the
+  tenant. `top_techniques` was added to `SocReport` so it works for every
+  SOC tenant regardless of SIEM entitlement.
+- `/agents` now marks eleven of the twelve **live**; only the Assessment
+  Assistant (Phase 2) is dormant.
+- New tests: coverage matrix staging + KPIs, `buildSocReport` latency /
+  conversion / SLA / technique tally, `draftReportNarrative` disclaimer.
+
+## Hardening — what's in
+
+- **Agent-safety review pass** — 6 findings fixed, one commit each:
+  runtime-produced agent messages/runs are now schema-validated at
+  creation (not just at seed time); the Investigation Agent escalates to a
+  human below 0.4 confidence instead of completing silently; the kill
+  switch blocks `planCaseResponse` / `requestAction` / `approveAction`,
+  not only execution; seeded cases/evidence/tasks/playbooks/action-requests
+  are contract-validated at store assembly; stale pending approvals are
+  flagged after 48h.
+- **Security review pass** — 4 findings fixed: `fetchKillSwitches` and
+  `recordAnalystFeedback` permission gates tightened; evidence-immutability
+  / tamper-marker copy made explicit; `fetchCaseOrchestration` rejects a
+  cross-tenant case id.
+- **Guided-demo controller** (`/demo`, `lib/demo/`, `components/demo/`) —
+  a docked step controller over the real screens, driven by a non-persisted
+  `guidedDemo` session slice. Two scoped walkthroughs: a 12-minute
+  technical run that opens a case from intake, runs the enrichment and
+  investigation agents, plans + requests an A3 response, **approves it as
+  a different principal**, executes the dry-run and closes the case; and a
+  read-only 5-minute executive run. Autoplay, kiosk mode and the other
+  spec walkthroughs are follow-on work that reuses the controller.
+- **Persona sweep** — every screen loaded as each of the 9 personas
+  (analyst, senior analyst, approver, SOC manager, CISO, admin, reviewer,
+  auditor, super admin) across all three tenant types; no crashes,
+  access-denied and entitlement-missing states correct.
+- **Nav / palette audit** — every route present and correctly grouped in
+  the command palette; the shipped-milestone badge/scaffolding removed
+  from the navigation layer.
 
 ## M2 — what's in
 
@@ -338,12 +433,12 @@ component API, no dependency on the CLI.
   entities in the Log Explorer.
 - **Analytics** (`/analytics`) — a role-aware reporting layer (a contract
   consumer, not a cross-product god-view) with three presets: **Detection
-  Analytics** (SIEM, live now — volume trend, connector reliability,
-  telemetry-family coverage staging, quarantine causes, event-type mix,
-  entity-risk distribution), **SOC Manager** (M4 stub), **Executive/CISO**
-  (M5 stub, degrades to whatever the tenant is entitled to). Default preset
-  follows the viewer's role. New roles `ciso` + `soc_manager` (read-only,
-  `reporting.view` + `audit.view`) with matching demo personas.
+  Analytics** (SIEM — volume trend, connector reliability, telemetry-family
+  coverage staging, quarantine causes, event-type mix, entity-risk
+  distribution), **SOC Manager**, and **Executive/CISO** (all three real
+  as of M5; each degrades to whatever the tenant is entitled to). Default
+  preset follows the viewer's role. New roles `ciso` + `soc_manager`
+  (read-only, `reporting.view` + `audit.view`) with matching demo personas.
 - **Interactive drill-down** — dashboards are URL-param driven: stat tiles,
   chart marks, table rows, legend items, and degraded-source names all link
   into the filtered operational screens; the Log Explorer hydrates a query
@@ -367,12 +462,13 @@ component API, no dependency on the CLI.
 3. `alert-envelope` / `correlation-rule` Zod schemas are defined (with the
    human-only-`enabled` and no-empty-`contributing_event_refs` refinements)
    ahead of M2/M3 so producers share one shape.
-4. Detection coverage is not yet built (M5); no binary covered/not-covered
-   flag has been introduced anywhere.
+4. Detection coverage (M5) is staged along a pipeline, never a binary
+   covered/not-covered flag — `no_telemetry → telemetry → activity →
+   detected → correlated`, with `detected` gated on an enabled rule.
 
 ## Tests
 
-Vitest, pure-function coverage on the load-bearing pieces (184 tests):
+Vitest, pure-function coverage on the load-bearing pieces (224 tests, 25 files):
 
 - `src/lib/query/parser.test.ts` — the safe query parser: valid grammar,
   injection/code rejection (`;`, `$(…)`, backticks, `--`, `/* */`, `\x`),
@@ -382,8 +478,17 @@ Vitest, pure-function coverage on the load-bearing pieces (184 tests):
   `source.family` resolution, time-window filtering, limit/truncation,
   time-range caps.
 - `src/mock/rbac.test.ts` — role → permission mapping, `assertCan` /
-  `assertEntitlement` failure codes, separation of duties (no role holds both
-  `rule.propose` and `rule.enable`), auditor is read-only.
+  `assertEntitlement` failure codes, separation of duties (no operational
+  role holds both `rule.propose` and `rule.enable`), auditor is read-only,
+  and `super_admin`'s documented break-glass exception (holds the
+  conflicting pairs, bypasses entitlements, still cannot self-approve).
+- `src/lib/soc/reporting.test.ts`, `src/lib/coverage/matrix.test.ts` — the
+  M5 roll-ups: pipeline-latency stages, alert-to-case conversion, SLA
+  compliance, technique tally, the not-published disclaimer; coverage
+  staging and the derived detection / response coverage %.
+- `src/lib/demo/scripts.test.ts` — each guided-demo step's persona holds a
+  role in the script tenant and the permission its route needs; the
+  technical run approves as a different principal than it requests.
 - `src/schemas/schemas.test.ts` — every Zod schema accepts its
   `examples/sample-*.json` fixture and rejects a broken one; the
   non-negotiable refinements (no empty `contributing_event_refs`, enabled
@@ -405,5 +510,5 @@ npm install
 npm run dev       # http://localhost:3000
 npm run build     # production build — passes clean
 npm run lint      # ESLint — passes clean
-npm test          # Vitest — 184 tests, passes clean
+npm test          # Vitest — 224 tests, passes clean
 ```

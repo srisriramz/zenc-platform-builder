@@ -7,7 +7,7 @@
  *
  * No real network. This is the seam a real backend would replace.
  */
-import { getStore } from "./store";
+import { getStore, type ConnectorRuntime } from "./store";
 import {
   addActionRequest,
   addAgentRun,
@@ -16,6 +16,9 @@ import {
   addOpenedCase,
   addProposedRule,
   addTask,
+  addTelemetrySourceToSession,
+  addTenant,
+  addUser,
   appendAudit,
   getSession,
   recordIntakeDecision,
@@ -29,8 +32,9 @@ import {
   upsertPlaybookOverride,
   upsertRuleOverride,
   upsertTaskOverride,
+  upsertTenantPolicyOverride,
 } from "./session-store";
-import { AccessError, assertCan, assertEntitlement, can, permissionsFor, roleInTenant, type SessionContext } from "./rbac";
+import { AccessError, assertCan, assertEntitlement, can, effectiveEntitlements, permissionsFor, resolveTenant, resolveUser, roleInTenant, type SessionContext } from "./rbac";
 import { parseQuery, type ParseError } from "@/lib/query/parser";
 import { runQuery, type EvalContext, type RunQueryError, type RunQueryResult } from "@/lib/query/evaluate";
 import { validateTransition } from "@/lib/detection/lifecycle";
@@ -40,8 +44,8 @@ import { CORRELATION_RULES, type SeededRule } from "@/data/correlation-rules";
 import { AGENTS } from "@/data/agents";
 import { ATTACK_TECHNIQUE_MAP } from "@/data/frameworks/attack";
 import { buildCoverageMatrix } from "@/lib/coverage/matrix";
-import { PARTNERS, ROLES, TENANT_MAP } from "@/data/platform";
-import { dailyVolumeSeries } from "@/data/ingestion-profile";
+import { PARTNERS, ROLES, TENANT_MAP, basePolicy, type RoleId, type Tenant, type TenantPolicy, type User } from "@/data/platform";
+import { dailyVolumeSeries, FAMILY_INGESTION_PROFILE, nominalEps } from "@/data/ingestion-profile";
 import { DEMO_NOW_ISO, minus, secondsBetween } from "@/lib/time";
 import type {
   AgentMessage,
@@ -60,6 +64,7 @@ import type {
   RuleLifecycleState,
   Task,
   TaskStatus,
+  TelemetrySourceFamily,
 } from "@/schemas";
 import { actionRequestSchema, caseSchema, evidenceSchema, taskSchema } from "@/schemas";
 import type { RuleDefinition } from "@/lib/correlation/types";
@@ -77,6 +82,8 @@ import { approvalRequirement, canApprove, type ApprovalPolicy } from "@/lib/soc/
 import { executeAction as runExecutor, rollbackAction as runRollback, isReversible } from "@/lib/soc/executor";
 import { summarizeCaseOrchestration } from "@/lib/soc/supervisor";
 import { reviewAgentRun } from "@/lib/soc/qa-governance";
+import { buildSocReport, draftReportNarrative } from "@/lib/soc/reporting";
+import { buildPipelineFunnel } from "@/lib/pipeline/funnel";
 import { hashString } from "@/lib/prng";
 
 export type SimMode = "normal" | "slow" | "timeout" | "server_error" | "degraded_source" | "partial";
@@ -129,23 +136,27 @@ async function gate(op: string, cost = 180) {
 export async function fetchBootstrap(userId: string) {
   await gate("bootstrap", 90);
   const store = getStore();
-  const user = store.users.find((u) => u.user_id === userId);
+  const user = resolveUser(userId);
   if (!user) throw new AccessError("not_authenticated", "Unknown demo user.");
+  const allTenants = [...store.tenants, ...getSession().addedTenants];
   return {
     demoNowIso: store.demoNowIso,
     user,
-    tenants: store.tenants
+    tenants: allTenants
       .filter((t) => user.roles.some((r) => r.tenant_id === t.tenant_id))
-      .map((t) => ({
-        tenant_id: t.tenant_id,
-        name: t.name,
-        sector: t.sector,
-        entitlements: t.entitlements,
-        role: user.roles.find((r) => r.tenant_id === t.tenant_id)!.role,
-        kill_switch: t.policy.kill_switch,
-      })),
+      .map((t) => {
+        const role = user.roles.find((r) => r.tenant_id === t.tenant_id)!.role;
+        return {
+          tenant_id: t.tenant_id,
+          name: t.name,
+          sector: t.sector,
+          entitlements: effectiveEntitlements({ userId, tenantId: t.tenant_id })!,
+          role,
+          kill_switch: t.policy.kill_switch,
+        };
+      }),
     globalKillSwitch: store.killSwitches.global,
-    allUsers: store.users.map((u) => ({ user_id: u.user_id, display_name: u.display_name })),
+    allUsers: [...store.users, ...getSession().addedUsers].map((u) => ({ user_id: u.user_id, display_name: u.display_name })),
   };
 }
 
@@ -155,14 +166,15 @@ export type SessionCapabilities = Awaited<ReturnType<typeof fetchSessionCapabili
 
 export async function fetchSessionCapabilities(ctx: SessionContext) {
   await gate("capabilities", 60);
+  const tenant = resolveTenant(ctx.tenantId);
   return {
     role: roleInTenant(ctx),
     permissions: permissionsFor(ctx),
-    tenant: TENANT_MAP[ctx.tenantId]
+    tenant: tenant
       ? {
-          name: TENANT_MAP[ctx.tenantId].name,
-          entitlements: TENANT_MAP[ctx.tenantId].entitlements,
-          policy: TENANT_MAP[ctx.tenantId].policy,
+          name: tenant.name,
+          entitlements: effectiveEntitlements(ctx)!,
+          policy: { ...tenant.policy, ...getSession().tenantPolicyOverrides.get(ctx.tenantId) },
         }
       : null,
   };
@@ -179,13 +191,153 @@ export async function fetchAudit(ctx: SessionContext) {
 export async function fetchAdminTenants(ctx: SessionContext) {
   await gate("admin-tenants");
   assertCan(ctx, "admin.identity");
-  return getStore().tenants;
+  const session = getSession();
+  return [...getStore().tenants, ...session.addedTenants].map((t) => ({
+    ...t,
+    policy: { ...t.policy, ...session.tenantPolicyOverrides.get(t.tenant_id) },
+  }));
 }
 
 export async function fetchAdminUsers(ctx: SessionContext) {
   await gate("admin-users");
   assertCan(ctx, "admin.identity");
-  return getStore().users;
+  return [...getStore().users, ...getSession().addedUsers];
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding wizard — create tenant, invite user, add + validate a data source
+// ---------------------------------------------------------------------------
+
+export interface CreateTenantInput {
+  name: string;
+  sector: string;
+  has_siem: boolean;
+  has_soc: boolean;
+}
+
+export async function createTenant(ctx: SessionContext, input: CreateTenantInput): Promise<Tenant> {
+  await gate("create-tenant", 200);
+  assertCan(ctx, "admin.identity");
+  if (!input.name.trim()) throw new AccessError("permission_denied", "Tenant name is required.");
+  const slug = input.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const tenant_id = `tenant-${slug || "new"}-${(hashString(input.name + DEMO_NOW_ISO) >>> 0).toString(36).slice(0, 5)}`;
+  const tenant: Tenant = {
+    tenant_id,
+    partner_id: PARTNERS[0].partner_id,
+    name: input.name.trim(),
+    sector: input.sector.trim() || "Unspecified",
+    // Assessment (Phase 2) stays dormant everywhere — the wizard never offers it.
+    entitlements: { has_siem: input.has_siem, has_soc: input.has_soc, has_assessment: false },
+    policy: basePolicy(),
+  };
+  addTenant(tenant);
+  appendAudit({
+    tenant_id,
+    occurred_at: DEMO_NOW_ISO,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "entitlement_changed",
+    target_type: "entitlement",
+    target_id: tenant_id,
+    detail: `Tenant "${tenant.name}" created — SIEM ${input.has_siem ? "on" : "off"}, SOAR ${input.has_soc ? "on" : "off"}.`,
+  });
+  return tenant;
+}
+
+export interface CreateUserInput {
+  display_name: string;
+  email: string;
+  tenant_id: string;
+  role: RoleId;
+}
+
+export async function createUser(ctx: SessionContext, input: CreateUserInput): Promise<User> {
+  await gate("create-user", 180);
+  assertCan(ctx, "admin.identity");
+  if (!input.display_name.trim() || !input.email.trim()) {
+    throw new AccessError("permission_denied", "Name and email are required.");
+  }
+  if (!resolveTenant(input.tenant_id)) throw new AccessError("tenant_not_found", "Unknown tenant.");
+  const slug = input.display_name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const user_id = `user-${slug || "new"}-${(hashString(input.email + DEMO_NOW_ISO) >>> 0).toString(36).slice(0, 5)}`;
+  const user: User = {
+    user_id,
+    display_name: input.display_name.trim(),
+    email: input.email.trim(),
+    roles: [{ tenant_id: input.tenant_id, role: input.role }],
+  };
+  addUser(user);
+  appendAudit({
+    tenant_id: input.tenant_id,
+    occurred_at: DEMO_NOW_ISO,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "role_changed",
+    target_type: "role",
+    target_id: user_id,
+    detail: `Invited ${user.display_name} as ${ROLES[input.role].label}.`,
+  });
+  return user;
+}
+
+export interface AddTelemetrySourceInput {
+  tenant_id: string;
+  family: TelemetrySourceFamily;
+  connector_name?: string;
+}
+
+export async function addTelemetrySource(
+  ctx: SessionContext,
+  input: AddTelemetrySourceInput,
+): Promise<{ source: ConnectorRuntime; firstEvent: NormalizedEvent }> {
+  await gate("add-telemetry-source", 260);
+  assertCan(ctx, "admin.identity");
+  const tenant = resolveTenant(input.tenant_id);
+  if (!tenant) throw new AccessError("tenant_not_found", "Unknown tenant.");
+  if (!tenant.entitlements.has_siem) {
+    throw new AccessError("entitlement_missing", `${tenant.name} is not entitled to ZenC SIEM — enable it before adding a data source.`);
+  }
+  const suffix = (hashString(input.tenant_id + input.family + DEMO_NOW_ISO) >>> 0).toString(36).slice(0, 5);
+  const telemetry_source_id = `ts-onboard-${suffix}`;
+  const connector_id = input.connector_name?.trim() || `${input.family}-onboard-01`;
+  const eps = nominalEps(input.family, 1);
+  const source: ConnectorRuntime = {
+    telemetry_source_id,
+    tenant_id: input.tenant_id,
+    family: input.family,
+    connector_id,
+    connector_label: input.connector_name?.trim() || `${FAMILY_INGESTION_PROFILE[input.family].label} connector`,
+    health: "healthy",
+    last_event_at: DEMO_NOW_ISO,
+    ingestion_lag_seconds: 4,
+    events_ingested_24h: eps * 86400,
+    schema_validation_failures_24h: 0,
+    quarantined_in_sample: 0,
+    sample_events: 1,
+    nominal_eps: eps,
+    avg_event_bytes: FAMILY_INGESTION_PROFILE[input.family].avg_event_bytes,
+  };
+  addTelemetrySourceToSession(source);
+
+  const firstEvent: NormalizedEvent = {
+    event_id: `evt-onboard-${suffix}`,
+    tenant_id: input.tenant_id,
+    telemetry_source_id,
+    occurred_at: minus(DEMO_NOW_ISO, { seconds: 4 }),
+    ingested_at: DEMO_NOW_ISO,
+    event_type: "connector_validation_event",
+    raw_payload_ref: `raw/onboarding/${telemetry_source_id}`,
+    normalization_status: "normalized",
+  };
+
+  appendAudit({
+    tenant_id: input.tenant_id,
+    occurred_at: DEMO_NOW_ISO,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "entitlement_changed",
+    target_type: "entitlement",
+    target_id: telemetry_source_id,
+    detail: `Data source "${connector_id}" (${input.family}) added and validated with a first event.`,
+  });
+  return { source, firstEvent };
 }
 
 export async function fetchPolicies(ctx: SessionContext) {
@@ -194,16 +346,68 @@ export async function fetchPolicies(ctx: SessionContext) {
     assertCan(ctx, "admin.policy");
   }
   const store = getStore();
+  const session = getSession();
   return {
     globalKillSwitch: store.killSwitches.global,
     partners: store.partners,
-    tenants: store.tenants.map((t) => ({ tenant_id: t.tenant_id, name: t.name, policy: t.policy })),
+    tenants: store.tenants.map((t) => ({
+      tenant_id: t.tenant_id,
+      name: t.name,
+      policy: { ...t.policy, ...session.tenantPolicyOverrides.get(t.tenant_id) },
+    })),
+    can_edit_policy: can(ctx, "admin.policy"),
   };
+}
+
+/**
+ * Autonomy level and pre-authorized action classes are the only tenant-policy
+ * fields a human may tune — rule-promotion approval, self-approval, and A4
+ * always require independent human approval regardless of policy, and are
+ * never accepted here (see `TenantPolicy` in data/platform.ts).
+ */
+export async function updateTenantPolicy(
+  ctx: SessionContext,
+  tenantId: string,
+  patch: Partial<Pick<TenantPolicy, "default_autonomy_level" | "pre_authorized_action_classes" | "l3_preauthorized_action_types">>,
+) {
+  await gate("update-tenant-policy", 140);
+  assertCan(ctx, "admin.policy");
+  const tenant = resolveTenant(tenantId);
+  if (!tenant) throw new AccessError("tenant_not_found", "Unknown tenant.");
+  if (patch.pre_authorized_action_classes?.includes("A4")) {
+    throw new AccessError("permission_denied", "A4 actions can never be pre-authorized — they always require independent human approval.");
+  }
+  upsertTenantPolicyOverride(tenantId, patch);
+  appendAudit({
+    tenant_id: tenantId,
+    occurred_at: DEMO_NOW_ISO,
+    actor: { principal_id: ctx.userId, principal_type: "human" },
+    action: "policy_changed",
+    target_type: "policy",
+    target_id: tenantId,
+    detail: `Policy updated: ${Object.keys(patch).join(", ")}`,
+  });
+  return { tenant_id: tenantId, policy: { ...tenant.policy, ...getSession().tenantPolicyOverrides.get(tenantId) } };
 }
 
 export async function fetchFrameworks() {
   await gate("frameworks", 70);
   return getStore().frameworks;
+}
+
+/**
+ * Pre-auth reads for the login persona picker. No ctx — nobody is
+ * authenticated yet — so these merge seeded + wizard-created tenants/users
+ * directly, the same way `resolveUser`/`resolveTenant` do post-auth.
+ */
+export function listLoginUsers(): User[] {
+  return [...getStore().users, ...getSession().addedUsers];
+}
+
+export function listLoginTenantNames(): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const t of [...getStore().tenants, ...getSession().addedTenants]) names[t.tenant_id] = t.name;
+  return names;
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +418,7 @@ export async function fetchTelemetrySources(ctx: SessionContext) {
   await gate("telemetry-sources");
   assertEntitlement(ctx, "has_siem");
   assertCan(ctx, "siem.view");
-  const rows = getStore().telemetrySources.filter((s) => s.tenant_id === ctx.tenantId);
+  const rows = [...getStore().telemetrySources, ...getSession().addedTelemetrySources].filter((s) => s.tenant_id === ctx.tenantId);
   if (currentSim === "degraded_source") {
     return rows.map((r, i) => (i === 0 ? { ...r, health: "degraded" as const, health_note: "Injected degraded state (simulation)." } : r));
   }
@@ -788,26 +992,24 @@ export type DetectionAnalytics = Awaited<ReturnType<typeof fetchDetectionAnalyti
 // SIEM — ATT&CK × D3FEND coverage matrix
 // ---------------------------------------------------------------------------
 
-export async function fetchCoverageMatrix(ctx: SessionContext) {
-  await gate("coverage", 220);
-  assertEntitlement(ctx, "has_siem");
-  assertCan(ctx, "siem.view");
+/** the coverage matrix computation, without the entitlement/permission gate */
+function coverageMatrixFor(tenantId: string) {
   const store = getStore();
-  const sources = store.telemetrySources.filter((s) => s.tenant_id === ctx.tenantId);
+  const sources = store.telemetrySources.filter((s) => s.tenant_id === tenantId);
   const connectedFamilies = new Set(sources.map((s) => s.family));
   const liveFamilies = new Set(sources.filter((s) => s.health !== "stale").map((s) => s.family));
   const observedTechniqueIds = new Set(
     store.normalizedEvents
-      .filter((e) => e.tenant_id === ctx.tenantId && e.normalization_status === "normalized")
+      .filter((e) => e.tenant_id === tenantId && e.normalization_status === "normalized")
       .flatMap((e) => e.attack_technique_refs ?? []),
   );
 
-  const rules = mergedRules(ctx.tenantId).filter((r) => r.lifecycle_state === "enabled");
+  const rules = mergedRules(tenantId).filter((r) => r.lifecycle_state === "enabled");
   const firedRuleIds = new Set(rules.filter((r) => (store.ruleFireCounts[r.rule_id] ?? recomputeFireCount(r)) > 0).map((r) => r.rule_id));
 
   // response side only exists when the tenant also has SOAR
-  const hasSoc = !!TENANT_MAP[ctx.tenantId]?.entitlements.has_soc;
-  const enabledPlaybooks = hasSoc ? mergedPlaybooks(ctx.tenantId).filter((p) => p.lifecycle_state === "enabled") : [];
+  const hasSoc = !!TENANT_MAP[tenantId]?.entitlements.has_soc;
+  const enabledPlaybooks = hasSoc ? mergedPlaybooks(tenantId).filter((p) => p.lifecycle_state === "enabled") : [];
 
   const matrix = buildCoverageMatrix({
     techniques: store.frameworks.attackTechniques,
@@ -827,6 +1029,13 @@ export async function fetchCoverageMatrix(ctx: SessionContext) {
     attack_version: store.frameworks.attackVersion,
     d3fend_version: store.frameworks.d3fendVersion,
   };
+}
+
+export async function fetchCoverageMatrix(ctx: SessionContext) {
+  await gate("coverage", 220);
+  assertEntitlement(ctx, "has_siem");
+  assertCan(ctx, "siem.view");
+  return coverageMatrixFor(ctx.tenantId);
 }
 
 export type CoverageMatrixView = Awaited<ReturnType<typeof fetchCoverageMatrix>>;
@@ -2578,4 +2787,212 @@ export async function fetchCaseOrchestration(ctx: SessionContext, caseId: string
     return reviewAgentRun(run, msgs);
   });
   return { supervisor, qa, plan: mergedPlanFor(caseId) };
+}
+
+// ---------------------------------------------------------------------------
+// M5 — SOC reporting + Reporting Agent
+// ---------------------------------------------------------------------------
+
+function tenantAgentRuns(tenantId: string) {
+  return [...getSession().agentRuns, ...getStore().agentActivity.runs].filter((r) => r.tenant_id === tenantId);
+}
+
+/** cases that had at least one non-triage agent run (agent-assisted resolution) */
+function agentAssistedCaseIds(tenantId: string): Set<string> {
+  const runs = tenantAgentRuns(tenantId);
+  const ids = new Set<string>();
+  for (const r of runs) {
+    if (/^run-(enrich|investigate|advisor|plan|hunt)-/.test(r.agent_run_id)) ids.add(r.case_id);
+  }
+  return ids;
+}
+
+function socReportFor(tenantId: string) {
+  const store = getStore();
+  const cases = mergedCases(tenantId);
+  const nativeAlerts = socAlertsFor(tenantId).filter((a) => a.source.system === "zenc-siem");
+  const intakeItems = store.intakeItems.filter((i) => i.tenant_id === tenantId);
+  const candidates = store.caseCandidates.filter((c) => c.tenant_id === tenantId);
+
+  // per-stage second samples that need event resolution
+  const eventById = new Map(store.normalizedEvents.filter((e) => e.tenant_id === tenantId).map((e) => [e.event_id, e] as const));
+  const collection: number[] = [];
+  const siemDetection: number[] = [];
+  const handoff: number[] = [];
+  for (const a of nativeAlerts) {
+    const refs = (a.attack_techniques ?? []).flatMap((t) => t.contributing_event_refs);
+    const evs = [...new Set(refs)].map((r) => eventById.get(r)).filter(Boolean) as NormalizedEvent[];
+    for (const e of evs) collection.push(secondsBetween(e.occurred_at, e.ingested_at));
+    if (a.correlated_at && evs.length) {
+      const lastIngest = evs.reduce((m, e) => (Date.parse(e.ingested_at) > Date.parse(m) ? e.ingested_at : m), evs[0].ingested_at);
+      siemDetection.push(Math.max(0, secondsBetween(lastIngest, a.correlated_at)));
+    }
+    if (a.correlated_at && a.received_at) handoff.push(Math.max(0, secondsBetween(a.correlated_at, a.received_at)));
+  }
+
+  const hasSiem = !!TENANT_MAP[tenantId]?.entitlements.has_siem;
+  const coverage = hasSiem
+    ? (() => {
+        const m = coverageMatrixFor(tenantId);
+        return { detection_pct: m.kpis.detection_coverage_pct, response_pct: m.kpis.response_coverage_pct, techniques_in_scope: m.kpis.techniques_in_scope };
+      })()
+    : null;
+
+  const alertById = new Map(socAlertsFor(tenantId).map((a) => [a.envelope_id, a] as const));
+  const receivedAtByCase = new Map<string, string>();
+  for (const c of cases) {
+    const rec = c.linked_alert_ids
+      .map((id) => alertById.get(id)?.received_at)
+      .filter((x): x is string => !!x)
+      .sort()[0];
+    if (rec) receivedAtByCase.set(c.case_id, rec);
+  }
+
+  return buildSocReport({
+    cases,
+    nativeAlerts,
+    allSocAlerts: socAlertsFor(tenantId),
+    receivedAtByCase,
+    candidateCount: candidates.length,
+    intakeAcceptedCount: intakeItems.filter((i) => i.disposition === "accepted").length,
+    stageSamples: { collection, siem_detection: siemDetection, handoff },
+    agentAssistedCaseIds: agentAssistedCaseIds(tenantId),
+    agentRuns: tenantAgentRuns(tenantId),
+    coverage,
+  });
+}
+
+export async function fetchSocReport(ctx: SessionContext) {
+  await gate("soc-report", 260);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "reporting.view");
+  const report = socReportFor(ctx.tenantId);
+  const session = getSession();
+  const store = getStore();
+  const lastRun = [...session.agentRuns, ...store.agentActivity.runs]
+    .filter((r) => r.tenant_id === ctx.tenantId && r.agent_run_id.startsWith("run-report-"))
+    .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))[0];
+  const lastNarrative = lastRun
+    ? [...session.agentMessages, ...store.agentActivity.messages].find((m) => m.agent_run_id === lastRun.agent_run_id)?.claim ?? null
+    : null;
+  return {
+    report,
+    demoNowIso: store.demoNowIso,
+    tenant_name: TENANT_MAP[ctx.tenantId]?.name ?? ctx.tenantId,
+    last_draft: lastRun ? { run_id: lastRun.agent_run_id, at: lastRun.started_at, preview: lastNarrative } : null,
+  };
+}
+
+export type SocReportView = Awaited<ReturnType<typeof fetchSocReport>>;
+
+/**
+ * The ingestion → incident funnel for the `/why-soc` explainer. Always worked
+ * from the Northwind Bank demo tenant (the only estate with the full SIEM +
+ * SOAR pipeline), like the guided-demo scripts. Every figure comes straight
+ * from the assembled seed.
+ */
+const FUNNEL_REFERENCE_TENANT = "tenant-northwind-bank";
+
+export async function fetchPipelineFunnel(ctx: SessionContext) {
+  await gate("pipeline-funnel", 240);
+  if (!can(ctx, "siem.view") && !can(ctx, "soc.view")) assertCan(ctx, "soc.view");
+
+  const store = getStore();
+  const T = FUNNEL_REFERENCE_TENANT;
+  const sources = store.telemetrySources.filter((s) => s.tenant_id === T);
+  // health-adjusted rate — matches what /ingestion shows as "at current rate"
+  const effEps = (s: (typeof sources)[number]) => s.nominal_eps * (HEALTH_FACTOR[s.health] ?? 1);
+
+  const streamEventsPerDay = sources.reduce((sum, s) => sum + effEps(s) * 86_400, 0);
+  const streamBytesPerDay = sources.reduce((sum, s) => sum + effEps(s) * 86_400 * s.avg_event_bytes, 0);
+
+  const normalized = store.normalizedEvents.filter((e) => e.tenant_id === T);
+  const quarantined = normalized.filter((e) => e.normalization_status === "quarantined").length;
+  const nativeAlerts = store.alerts.filter((a) => a.tenant_id === T).length;
+  const thirdPartyAlerts = store.thirdPartyAlerts.filter((a) => a.tenant_id === T).length;
+  const acts = store.actionRequests.filter((r) => r.tenant_id === T);
+
+  const report = socReportFor(T);
+  const casesPending = Math.max(0, report.throughput.candidates - report.throughput.cases_opened);
+
+  const funnel = buildPipelineFunnel({
+    tenantLabel: TENANT_MAP[T]?.name.replace(" (demo)", "") ?? T,
+    families: sources.map((s) => ({
+      family: s.family,
+      label: FAMILY_INGESTION_PROFILE[s.family].label,
+      volumeWeight: effEps(s),
+      health: s.health,
+    })),
+    streamEventsPerDay,
+    streamBytesPerDay,
+    sampleWindowHours: 72,
+    normalizedEvents: normalized.length,
+    quarantinedEvents: quarantined,
+    nativeAlerts,
+    thirdPartyAlerts,
+    acceptedEnvelopes: report.throughput.alerts_accepted,
+    candidates: report.throughput.candidates,
+    casesOpened: report.throughput.cases_opened,
+    casesPending,
+    actionsPlanned: acts.length,
+    actionsExecuted: acts.filter((r) => r.status === "verified" || r.status === "executed").length,
+    mttdSeconds: report.latency.mttd_seconds,
+    mttrSeconds: report.latency.mttr_seconds,
+    agentAssistedPct: report.quality.agent_assisted_pct,
+    agentAcceptancePct: report.quality.agent_acceptance_pct,
+    detectionCoveragePct: report.coverage?.detection_pct ?? null,
+    responseCoveragePct: report.coverage?.response_pct ?? null,
+  });
+
+  return { funnel, demoNowIso: store.demoNowIso };
+}
+
+export type PipelineFunnelView = Awaited<ReturnType<typeof fetchPipelineFunnel>>;
+
+export async function runReportingAgent(ctx: SessionContext) {
+  await gate("reporting-agent", 600);
+  assertEntitlement(ctx, "has_soc");
+  assertCan(ctx, "reporting.view");
+  const report = socReportFor(ctx.tenantId);
+  const nameOf = (id: string) => getStore().users.find((u) => u.user_id === id)?.display_name ?? id;
+  const narrative = draftReportNarrative(report, nameOf);
+
+  const now = DEMO_NOW_ISO;
+  const runId = `run-report-${(hashString(now + getSession().agentRuns.length) >>> 0).toString(36)}`;
+  const message: AgentMessage = {
+    message_id: `${runId}-m1`,
+    agent_run_id: runId,
+    agent_name: "reporting-agent",
+    tenant_id: ctx.tenantId,
+    occurred_at: now,
+    prompt_version: "reporting-agent-prompt-v1.0",
+    tool_version: "kpi-aggregate-read-tool-v1.0",
+    input_ref: `soc-report:${ctx.tenantId}`,
+    tool_calls: [
+      { tool_name: "kpi-aggregate-read", called_at: now, scope_or_bound: "tenant-scoped aggregates" },
+      { tool_name: "case-read", called_at: now, scope_or_bound: "approved case data only" },
+    ],
+    claim: narrative,
+    confidence: 0.7,
+    evidence: [{ evidence_ref: `kpi-aggregate:${ctx.tenantId}`, supports: true, freshness: now }],
+    policy_outcome: "draft only — the Reporting Agent cannot publish; external-facing copy needs human sign-off",
+  };
+  addAgentRun(
+    {
+      agent_run_id: runId,
+      tenant_id: ctx.tenantId,
+      case_id: `soc-report:${ctx.tenantId}`,
+      subject_type: "case",
+      started_at: now,
+      completed_at: now,
+      message_ids: [message.message_id],
+      total_tool_calls: 2,
+      elapsed_seconds: 8,
+      human_touchpoints: [{ principal_id: ctx.userId, action: "reviewed", at: now, note: "Requested a report draft" }],
+      outcome: "completed",
+      analyst_feedback: null,
+    },
+    [message],
+  );
+  return { run_id: runId, narrative };
 }

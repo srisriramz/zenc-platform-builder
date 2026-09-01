@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Sora, Albert_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { DemoNotice } from "@/components/shell/demo-notice";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+/** Display / headings — matches the ZenC Labs brand site. */
+const sora = Sora({ variable: "--font-sora", subsets: ["latin"], weight: ["400", "500", "600", "700", "800"], display: "swap" });
+/** Body copy. */
+const albertSans = Albert_Sans({ variable: "--font-albert", subsets: ["latin"], display: "swap" });
+/** Monospace — IDs, code, query text. */
+const jetbrainsMono = JetBrains_Mono({ variable: "--font-jetbrains", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
   title: "ZenC Security Intelligence Platform (Demo)",
@@ -19,7 +23,7 @@ export const metadata: Metadata = {
  */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full dark`} suppressHydrationWarning>
+    <html lang="en" className={`${sora.variable} ${albertSans.variable} ${jetbrainsMono.variable} h-full dark`} suppressHydrationWarning>
       <body className="min-h-full bg-background text-foreground antialiased">
         <Providers>
           <DemoNotice />

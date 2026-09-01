@@ -12,14 +12,17 @@ import {
   Gauge,
   KeyRound,
   LayoutDashboard,
+  Filter,
   LineChart,
   Network,
+  PlayCircle,
   Radar,
   ScrollText,
   ShieldHalf,
   SlidersHorizontal,
   Siren,
   Table2,
+  UserPlus,
   Users,
   Waves,
   Waypoints,
@@ -37,7 +40,6 @@ export interface NavItem {
   icon: LucideIcon;
   requires?: "has_siem" | "has_soc";
   permission?: Permission;
-  milestone?: "M2" | "M3" | "M4" | "M5";
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -62,13 +64,16 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/playbooks", label: "Playbooks", section: "SOAR", product: "soc", icon: ScrollText, requires: "has_soc", permission: "soc.view" },
   { href: "/approvals", label: "Approval Queue", section: "SOAR", product: "soc", icon: BadgeCheck, requires: "has_soc", permission: "soc.view" },
   { href: "/actions", label: "Response Actions", section: "SOAR", product: "soc", icon: Zap, requires: "has_soc", permission: "soc.view" },
-  { href: "/reporting", label: "SOAR Reporting", section: "SOAR", product: "soc", icon: Activity, requires: "has_soc", permission: "soc.view", milestone: "M5" },
+  { href: "/reporting", label: "SOAR Reporting", section: "SOAR", product: "soc", icon: Activity, requires: "has_soc", permission: "reporting.view" },
 
   // ---- Analytics (cross-product reporting layer; degrades when a product is absent) ----
   { href: "/analytics", label: "Analytics", section: "Analytics", product: "platform", icon: LineChart, permission: "reporting.view" },
 
   // ---- Platform ----
+  { href: "/why-soc", label: "Why a SOC", section: "Platform", product: "platform", icon: Filter },
+  { href: "/demo", label: "Guided Demo", section: "Platform", product: "platform", icon: PlayCircle },
   { href: "/tenants", label: "Tenants", section: "Platform", product: "platform", icon: Building2, permission: "admin.identity" },
+  { href: "/onboarding", label: "Onboarding Wizard", section: "Platform", product: "platform", icon: UserPlus, permission: "admin.identity" },
   { href: "/users", label: "Users & Roles", section: "Platform", product: "platform", icon: Users, permission: "admin.identity" },
   { href: "/entitlements", label: "Entitlements", section: "Platform", product: "platform", icon: KeyRound, permission: "admin.identity" },
   { href: "/policies", label: "Policies & Kill Switches", section: "Platform", product: "platform", icon: SlidersHorizontal, permission: "admin.policy" },

@@ -6,8 +6,8 @@ import type { AgentName } from "@/schemas";
  * (agent-message). Adding a 13th means adding a row here first, not loosening
  * an existing one.
  *
- * As of M4c, ten of the twelve are wired (`status: "live"`). The Reporting
- * Agent lands in M5; the Assessment Assistant is Phase 2 (Assessment is off).
+ * Eleven of the twelve are wired (`status: "live"`). Only the Assessment
+ * Assistant is dormant — Assessment is Phase 2 and off everywhere.
  */
 export type Autonomy = "L0" | "L1" | "L2" | "L3" | "L4";
 
@@ -143,7 +143,7 @@ export const AGENTS: AgentDef[] = [
       { name: "kpi-aggregate-read", access: "read", bound: "tenant-scoped aggregates" },
     ],
     never_does: ["publish a report without human sign-off on external-facing copy"],
-    status: "m5",
+    status: "live",
     prompt_version: "reporting-agent-prompt-v1.0",
   },
   {

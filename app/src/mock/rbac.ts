@@ -1,4 +1,5 @@
-import { ROLES, TENANT_MAP, USER_MAP, type Permission, type RoleId } from "@/data/platform";
+import { ROLES, TENANT_MAP, USER_MAP, type Entitlements, type Permission, type RoleId, type Tenant, type User } from "@/data/platform";
+import { getSession } from "./session-store";
 
 export interface SessionContext {
   userId: string;
@@ -15,8 +16,17 @@ export class AccessError extends Error {
   }
 }
 
+/** Seeded tenants/users plus whatever the onboarding wizard created this session. */
+export function resolveUser(userId: string): User | undefined {
+  return USER_MAP[userId] ?? getSession().addedUsers.find((u) => u.user_id === userId);
+}
+
+export function resolveTenant(tenantId: string): Tenant | undefined {
+  return TENANT_MAP[tenantId] ?? getSession().addedTenants.find((t) => t.tenant_id === tenantId);
+}
+
 export function roleInTenant(ctx: SessionContext): RoleId | null {
-  const user = USER_MAP[ctx.userId];
+  const user = resolveUser(ctx.userId);
   if (!user) return null;
   return user.roles.find((r) => r.tenant_id === ctx.tenantId)?.role ?? null;
 }
@@ -31,9 +41,9 @@ export function can(ctx: SessionContext, permission: Permission): boolean {
 }
 
 export function assertCan(ctx: SessionContext, permission: Permission): void {
-  const user = USER_MAP[ctx.userId];
+  const user = resolveUser(ctx.userId);
   if (!user) throw new AccessError("not_authenticated", "No authenticated demo user.");
-  if (!TENANT_MAP[ctx.tenantId]) throw new AccessError("tenant_not_found", "Unknown tenant.");
+  if (!resolveTenant(ctx.tenantId)) throw new AccessError("tenant_not_found", "Unknown tenant.");
   if (!roleInTenant(ctx)) {
     throw new AccessError("no_role_in_tenant", `${user.display_name} has no role in this tenant.`);
   }
@@ -42,10 +52,22 @@ export function assertCan(ctx: SessionContext, permission: Permission): void {
   }
 }
 
+/**
+ * A tenant's entitlements as this actor sees them. Identical to the tenant's
+ * configured entitlements for every role except `super_admin`, whose
+ * break-glass access deliberately bypasses per-tenant product licensing.
+ */
+export function effectiveEntitlements(ctx: SessionContext): Entitlements | null {
+  const tenant = resolveTenant(ctx.tenantId);
+  if (!tenant) return null;
+  if (roleInTenant(ctx) === "super_admin") return { has_siem: true, has_soc: true, has_assessment: true };
+  return tenant.entitlements;
+}
+
 export function assertEntitlement(ctx: SessionContext, entitlement: "has_siem" | "has_soc" | "has_assessment"): void {
-  const tenant = TENANT_MAP[ctx.tenantId];
+  const tenant = resolveTenant(ctx.tenantId);
   if (!tenant) throw new AccessError("tenant_not_found", "Unknown tenant.");
-  if (!tenant.entitlements[entitlement]) {
+  if (!effectiveEntitlements(ctx)?.[entitlement]) {
     const label = entitlement === "has_siem" ? "ZenC SIEM" : entitlement === "has_soc" ? "ZenC SOAR" : "ZenC Assessment";
     throw new AccessError("entitlement_missing", `${tenant.name} is not entitled to ${label}.`);
   }

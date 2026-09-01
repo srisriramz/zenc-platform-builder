@@ -96,6 +96,30 @@ describe("assertCan", () => {
   });
 });
 
+describe("super_admin — documented break-glass exception", () => {
+  // super_admin is intentionally excluded from ROLE_IDS above: it is the one
+  // sanctioned exception to the separation-of-duties invariants those tests
+  // enforce for every operational role.
+  const superAdmin = { userId: "user-nadia-superadmin", tenantId: "tenant-northwind-bank" };
+
+  it("deliberately holds both sides of every conflicting permission pair", () => {
+    const perms = permissionsFor(superAdmin);
+    expect(perms).toEqual(expect.arrayContaining(["rule.propose", "rule.enable"]));
+    expect(perms).toEqual(expect.arrayContaining(["case.work", "evidence.review"]));
+  });
+
+  it("bypasses tenant product entitlements", () => {
+    // Summit Credit Union has no SIEM entitlement — every other role is blocked here
+    expect(() => assertEntitlement({ userId: "user-nadia-superadmin", tenantId: "tenant-summit-cu" }, "has_siem")).not.toThrow();
+    expect(() => assertEntitlement(superAdmin, "has_assessment")).not.toThrow();
+  });
+
+  it("still cannot approve its own action request — self-approval is identity-based, not permission-based (see action-approval.test.ts)", () => {
+    expect(can(superAdmin, "action.approve")).toBe(true); // holds the permission...
+    // ...but canApprove() in lib/soc/action-approval.ts rejects same-principal_id regardless of role
+  });
+});
+
 describe("assertEntitlement", () => {
   it("passes when the tenant is entitled", () => {
     expect(() => assertEntitlement(analyst, "has_siem")).not.toThrow();
@@ -116,6 +140,9 @@ describe("assertEntitlement", () => {
   });
 });
 
+// Operational roles only. `super_admin` is deliberately excluded — it is the
+// platform's one documented break-glass exception to the separation-of-duties
+// checks below (see the dedicated describe block for its own coverage).
 const ROLE_IDS = [
   "analyst",
   "senior_analyst",

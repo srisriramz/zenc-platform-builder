@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ShieldCheck } from "lucide-react";
-import { USERS, TENANT_MAP, ROLES } from "@/data/platform";
+import { ArrowRight } from "lucide-react";
+import { ROLES } from "@/data/platform";
+import { listLoginTenantNames, listLoginUsers } from "@/mock/api";
 import { useSession } from "@/store/session";
+import { ZencMark } from "@/components/brand/zenc-logo";
 import { Card, CardContent, Badge } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 
@@ -22,6 +24,9 @@ export default function LoginPage() {
     if (hydrated && useSession.getState().userId) router.replace("/siem-dashboard");
   }, [hydrated, router]);
 
+  const users = listLoginUsers();
+  const tenantNames = listLoginTenantNames();
+
   return (
     <div className="relative mx-auto grid min-h-[calc(100vh-1.75rem)] max-w-6xl gap-10 px-4 py-12 lg:grid-cols-[0.85fr_1fr] lg:items-center lg:py-0">
       <div
@@ -29,17 +34,17 @@ export default function LoginPage() {
         className="pointer-events-none absolute inset-0 -z-10 opacity-70"
         style={{
           background:
-            "radial-gradient(600px circle at 15% 20%, color-mix(in oklch, var(--primary) 16%, transparent), transparent 60%), radial-gradient(500px circle at 85% 80%, color-mix(in oklch, var(--info) 12%, transparent), transparent 55%)",
+            "radial-gradient(600px circle at 15% 20%, color-mix(in oklch, var(--primary) 18%, transparent), transparent 60%), radial-gradient(500px circle at 85% 80%, color-mix(in oklch, var(--gold) 12%, transparent), transparent 55%)",
         }}
       />
 
       <div className="anim-rise space-y-5">
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-primary to-[color-mix(in_oklch,var(--primary)_55%,var(--info))] text-primary-foreground shadow-md">
-            <ShieldCheck className="size-5" />
-          </span>
+          <ZencMark size={40} className="text-foreground" />
           <div>
-            <p className="text-base font-semibold tracking-tight">ZenC Security Intelligence Platform</p>
+            <p className="font-display text-base font-bold tracking-tight">
+              Zen<span className="text-primary">C</span> Security Intelligence Platform
+            </p>
             <p className="text-xs text-muted-foreground">SIEM · SOAR — interactive demo</p>
           </div>
         </div>
@@ -65,7 +70,7 @@ export default function LoginPage() {
       </div>
 
       <div className="anim-rise anim-delay-2 grid gap-3 sm:grid-cols-2">
-        {USERS.map((u) => {
+        {users.map((u) => {
           const first = u.roles[0];
           return (
             <Card key={u.user_id} interactive className="flex flex-col">
@@ -77,7 +82,7 @@ export default function LoginPage() {
                 <div className="flex flex-1 flex-wrap content-start gap-1.5">
                   {u.roles.map((r) => (
                     <Badge key={r.tenant_id} variant="outline" className="text-[10px]">
-                      {ROLES[r.role].label} · {TENANT_MAP[r.tenant_id]?.name.replace(" (demo)", "")}
+                      {ROLES[r.role].label} · {(tenantNames[r.tenant_id] ?? r.tenant_id).replace(" (demo)", "")}
                     </Badge>
                   ))}
                 </div>
